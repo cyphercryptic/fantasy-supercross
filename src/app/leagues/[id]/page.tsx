@@ -64,6 +64,7 @@ export default function LeagueDashboard() {
   const [expandedUser, setExpandedUser] = useState<number | null>(null);
   const [breakdownData, setBreakdownData] = useState<Record<number, RiderBreakdown[]>>({});
   const [loadingBreakdown, setLoadingBreakdown] = useState<number | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     fetch(`/api/leagues/${id}`).then((r) => r.json()).then(setLeague);
@@ -173,6 +174,37 @@ export default function LeagueDashboard() {
           </div>
           {draftMessage && (
             <p className="text-red-600 text-sm mt-2">{draftMessage}</p>
+          )}
+          {league.is_commissioner && (
+            <div className="mt-4 pt-3 border-t border-[#D4D0CB]">
+              {showDeleteConfirm ? (
+                <div className="flex items-center gap-3">
+                  <p className="text-red-600 text-sm">Delete this league? This cannot be undone.</p>
+                  <button
+                    onClick={async () => {
+                      const res = await fetch(`/api/leagues/${id}`, { method: "DELETE" });
+                      if (res.ok) router.push("/leagues");
+                    }}
+                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm font-semibold"
+                  >
+                    Confirm Delete
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="text-[#8A8A8A] hover:text-[#1A1A1A] text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="text-red-500 hover:text-red-700 text-sm"
+                >
+                  Delete League
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
