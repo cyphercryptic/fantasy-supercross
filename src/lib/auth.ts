@@ -42,7 +42,7 @@ export async function getCurrentUser(): Promise<User | null> {
   if (!session) return null;
 
   const { data: user } = await supabase
-    .from("users")
+    .from("app_users")
     .select("id, username, is_admin")
     .eq("id", session.user_id)
     .maybeSingle();

@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "New password must be at least 6 characters" }, { status: 400 });
     }
     const { data: dbUser } = await supabase
-      .from("users")
+      .from("app_users")
       .select("password_hash")
       .eq("id", user.id)
       .single();
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Current password is incorrect" }, { status: 401 });
     }
     const hash = bcrypt.hashSync(newPassword, 10);
-    await supabase.from("users").update({ password_hash: hash }).eq("id", user.id);
+    await supabase.from("app_users").update({ password_hash: hash }).eq("id", user.id);
     return NextResponse.json({ success: true });
   }
 
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
   if (action === "register") {
     const { data: existing } = await supabase
-      .from("users")
+      .from("app_users")
       .select("id")
       .eq("username", username)
       .maybeSingle();
@@ -53,11 +53,11 @@ export async function POST(req: NextRequest) {
     const hash = bcrypt.hashSync(password, 10);
     // First user becomes admin
     const { count } = await supabase
-      .from("users")
+      .from("app_users")
       .select("*", { count: "exact", head: true });
     const isAdmin = count === 0 ? 1 : 0;
     const { data: newUser, error: insertError } = await supabase
-      .from("users")
+      .from("app_users")
       .insert({ username, password_hash: hash, is_admin: isAdmin })
       .select("id")
       .single();
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
 
   if (action === "login") {
     const { data: user } = await supabase
-      .from("users")
+      .from("app_users")
       .select("id, password_hash, is_admin")
       .eq("username", username)
       .maybeSingle();
