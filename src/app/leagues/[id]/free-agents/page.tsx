@@ -163,7 +163,7 @@ export default function FreeAgentsPage() {
           <div className="mt-3 flex gap-2">
             <button
               onClick={handleTransaction}
-              disabled={submitting || (rosterFull && selectedAdd && !selectedDrop)}
+              disabled={submitting || !!(rosterFull && selectedAdd && !selectedDrop)}
               className="bg-white text-[#1A1A1A] hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-40"
             >
               {submitting ? "Processing..." : "Confirm Transaction"}

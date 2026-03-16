@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import getDb from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 import { createSession, destroySession, getCurrentUser } from "@/lib/auth";
 
 // POST /api/auth — login, register, logout, or change_password
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { action, username, password, newPassword } = body;
-  const db = getDb();
 
   if (action === "logout") {
     await destroySession();
@@ -25,12 +24,16 @@ export async function POST(req: NextRequest) {
     if (newPassword.length < 6) {
       return NextResponse.json({ error: "New password must be at least 6 characters" }, { status: 400 });
     }
-    const dbUser = db.prepare("SELECT password_hash FROM users WHERE id = ?").get(user.id) as { password_hash: string } | undefined;
+    const { data: dbUser } = await supabase
+      .from("users")
+      .select("password_hash")
+      .eq("id", user.id)
+      .single();
     if (!dbUser || !bcrypt.compareSync(password, dbUser.password_hash)) {
       return NextResponse.json({ error: "Current password is incorrect" }, { status: 401 });
     }
     const hash = bcrypt.hashSync(newPassword, 10);
-    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, user.id);
+    await supabase.from("users").update({ password_hash: hash }).eq("id", user.id);
     return NextResponse.json({ success: true });
   }
 
@@ -39,25 +42,35 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "register") {
-    const existing = db.prepare("SELECT id FROM users WHERE username = ?").get(username);
+    const { data: existing } = await supabase
+      .from("users")
+      .select("id")
+      .eq("username", username)
+      .maybeSingle();
     if (existing) {
       return NextResponse.json({ error: "Username already taken" }, { status: 400 });
     }
     const hash = bcrypt.hashSync(password, 10);
     // First user becomes admin
-    const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
-    const isAdmin = userCount.count === 0 ? 1 : 0;
-    const result = db
-      .prepare("INSERT INTO users (username, password_hash, is_admin) VALUES (?, ?, ?)")
-      .run(username, hash, isAdmin);
-    await createSession(Number(result.lastInsertRowid));
+    const { count } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true });
+    const isAdmin = count === 0 ? 1 : 0;
+    const { data: newUser } = await supabase
+      .from("users")
+      .insert({ username, password_hash: hash, is_admin: isAdmin })
+      .select("id")
+      .single();
+    await createSession(newUser!.id);
     return NextResponse.json({ success: true, isAdmin: isAdmin === 1 });
   }
 
   if (action === "login") {
-    const user = db
-      .prepare("SELECT * FROM users WHERE username = ?")
-      .get(username) as { id: number; password_hash: string; is_admin: number } | undefined;
+    const { data: user } = await supabase
+      .from("users")
+      .select("id, password_hash, is_admin")
+      .eq("username", username)
+      .maybeSingle();
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }

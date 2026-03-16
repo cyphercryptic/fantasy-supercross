@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import getDb from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 
 // GET /api/leagues/[id]/leaderboard — league standings
@@ -10,66 +10,103 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const db = getDb();
 
-  const member = db.prepare("SELECT id FROM league_members WHERE league_id = ? AND user_id = ?").get(id, user.id);
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
   if (!member) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
-  // Find the most recently completed race
-  const lastCompletedRace = db.prepare(
-    "SELECT id FROM races WHERE status = 'completed' ORDER BY round_number DESC LIMIT 1"
-  ).get() as { id: number } | undefined;
+  // Get all league members
+  const { data: rawMembers } = await supabase
+    .from("league_members")
+    .select("user_id, team_name, users(id, username)")
+    .eq("league_id", id);
 
-  // Total points: position points + bonus points for riders in the user's lineup
-  const standings = db.prepare(`
-    SELECT
-      u.id,
-      u.username,
-      lm.team_name,
-      COALESCE(
-        (SELECT SUM(rr.points) FROM weekly_lineups wl2
-         JOIN race_results rr ON rr.rider_id = wl2.rider_id AND rr.race_id = wl2.race_id
-         WHERE wl2.league_id = lm.league_id AND wl2.user_id = lm.user_id), 0
-      ) + COALESCE(
-        (SELECT SUM(rb.points) FROM weekly_lineups wl3
-         JOIN race_bonuses rb ON rb.rider_id = wl3.rider_id AND rb.race_id = wl3.race_id
-         WHERE wl3.league_id = lm.league_id AND wl3.user_id = lm.user_id), 0
-      ) as total_points,
-      COUNT(DISTINCT wl.race_id) as races_played
-    FROM league_members lm
-    JOIN users u ON u.id = lm.user_id
-    LEFT JOIN weekly_lineups wl ON wl.league_id = lm.league_id AND wl.user_id = lm.user_id
-    WHERE lm.league_id = ?
-    GROUP BY u.id
-    ORDER BY total_points DESC
-  `).all(id) as { id: number; username: string; team_name: string | null; total_points: number; races_played: number }[];
+  // Get all lineups for this league
+  const { data: lineups } = await supabase
+    .from("weekly_lineups")
+    .select("user_id, race_id, rider_id")
+    .eq("league_id", id);
 
-  // Last week's score for each user (position points + bonuses from last completed race)
-  if (lastCompletedRace) {
-    for (const s of standings) {
-      const lastWeek = db.prepare(`
-        SELECT COALESCE(SUM(rr.points), 0) as position_pts
-        FROM weekly_lineups wl
-        JOIN race_results rr ON rr.rider_id = wl.rider_id AND rr.race_id = wl.race_id
-        WHERE wl.league_id = ? AND wl.user_id = ? AND wl.race_id = ?
-      `).get(id, s.id, lastCompletedRace.id) as { position_pts: number };
+  // Get race results and bonuses for relevant rider/race combos
+  const riderIds = [...new Set((lineups || []).map((l) => l.rider_id))];
+  const raceIds = [...new Set((lineups || []).map((l) => l.race_id))];
 
-      const lastWeekBonus = db.prepare(`
-        SELECT COALESCE(SUM(rb.points), 0) as bonus_pts
-        FROM weekly_lineups wl
-        JOIN race_bonuses rb ON rb.rider_id = wl.rider_id AND rb.race_id = wl.race_id
-        WHERE wl.league_id = ? AND wl.user_id = ? AND wl.race_id = ?
-      `).get(id, s.id, lastCompletedRace.id) as { bonus_pts: number };
+  let results: { race_id: number; rider_id: number; points: number }[] = [];
+  let bonuses: { race_id: number; rider_id: number; points: number }[] = [];
 
-      (s as Record<string, unknown>).last_week_points = lastWeek.position_pts + lastWeekBonus.bonus_pts;
-    }
-  } else {
-    for (const s of standings) {
-      (s as Record<string, unknown>).last_week_points = 0;
-    }
+  if (riderIds.length > 0 && raceIds.length > 0) {
+    const { data: r } = await supabase
+      .from("race_results")
+      .select("race_id, rider_id, points")
+      .in("rider_id", riderIds)
+      .in("race_id", raceIds);
+    results = r || [];
+
+    const { data: b } = await supabase
+      .from("race_bonuses")
+      .select("race_id, rider_id, points")
+      .in("rider_id", riderIds)
+      .in("race_id", raceIds);
+    bonuses = b || [];
   }
+
+  // Build lookup maps
+  const resultMap = new Map<string, number>();
+  for (const r of results) {
+    resultMap.set(`${r.race_id}-${r.rider_id}`, r.points);
+  }
+  const bonusMap = new Map<string, number>();
+  for (const b of bonuses) {
+    const key = `${b.race_id}-${b.rider_id}`;
+    bonusMap.set(key, (bonusMap.get(key) || 0) + b.points);
+  }
+
+  // Find the most recently completed race
+  const { data: lastCompletedRace } = await supabase
+    .from("races")
+    .select("id")
+    .eq("status", "completed")
+    .order("round_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // Calculate standings
+  const standings = (rawMembers || []).map((m) => {
+    const userId = m.user_id;
+    const userLineups = (lineups || []).filter((l) => l.user_id === userId);
+
+    let totalPoints = 0;
+    let lastWeekPoints = 0;
+    const playedRaces = new Set<number>();
+
+    for (const l of userLineups) {
+      const pts = resultMap.get(`${l.race_id}-${l.rider_id}`) || 0;
+      const bonus = bonusMap.get(`${l.race_id}-${l.rider_id}`) || 0;
+      totalPoints += pts + bonus;
+      if (pts > 0 || bonus > 0) playedRaces.add(l.race_id);
+
+      if (lastCompletedRace && l.race_id === lastCompletedRace.id) {
+        lastWeekPoints += pts + bonus;
+      }
+    }
+
+    return {
+      id: (m.users as unknown as unknown as Record<string, unknown>).id,
+      username: (m.users as unknown as unknown as Record<string, unknown>).username,
+      team_name: m.team_name,
+      total_points: totalPoints,
+      races_played: playedRaces.size,
+      last_week_points: lastWeekPoints,
+    };
+  });
+
+  standings.sort((a, b) => b.total_points - a.total_points);
 
   return NextResponse.json(standings);
 }

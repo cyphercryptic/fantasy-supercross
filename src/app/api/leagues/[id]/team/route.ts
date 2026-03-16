@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import getDb from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
-
-
 
 // GET /api/leagues/[id]/team — get team info + starting lineup for upcoming race
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -12,43 +10,54 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const db = getDb();
 
-  const member = db.prepare(
-    "SELECT team_name, team_logo FROM league_members WHERE league_id = ? AND user_id = ?"
-  ).get(id, user.id) as { team_name: string | null; team_logo: string | null } | undefined;
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("team_name, team_logo")
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
 
   if (!member) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
-  const league = db.prepare("SELECT * FROM leagues WHERE id = ?").get(id) as {
-    id: number; name: string; lineup_450: number; lineup_250e: number; lineup_250w: number; draft_status: string;
-  };
+  const { data: league } = await supabase
+    .from("leagues")
+    .select("id, name, lineup_450, lineup_250e, lineup_250w, draft_status")
+    .eq("id", id)
+    .single();
 
   // Get upcoming race
-  const upcomingRace = db.prepare("SELECT * FROM races WHERE status = 'upcoming' ORDER BY round_number ASC LIMIT 1").get() as {
-    id: number; name: string; round_number: number | null;
-  } | undefined;
+  const { data: upcomingRace } = await supabase
+    .from("races")
+    .select("*")
+    .eq("status", "upcoming")
+    .order("round_number", { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
   // Get lineup for upcoming race
-  let lineup: { id: number; name: string; number: number | null; team: string | null; class: string }[] = [];
+  let lineup: Record<string, unknown>[] = [];
   if (upcomingRace) {
-    lineup = db.prepare(`
-      SELECT r.id, r.name, r.number, r.team, r.class FROM weekly_lineups wl
-      JOIN riders r ON r.id = wl.rider_id
-      WHERE wl.league_id = ? AND wl.user_id = ? AND wl.race_id = ?
-      ORDER BY r.class, r.number ASC
-    `).all(id, user.id, upcomingRace.id) as typeof lineup;
+    const { data: lineupEntries } = await supabase
+      .from("weekly_lineups")
+      .select("riders(id, name, number, team, class)")
+      .eq("league_id", id)
+      .eq("user_id", user.id)
+      .eq("race_id", upcomingRace.id);
+
+    lineup = (lineupEntries || []).map((e) => e.riders as unknown as unknown as Record<string, unknown>);
   }
 
   // Get full roster
-  const roster = db.prepare(`
-    SELECT r.id, r.name, r.number, r.team, r.class FROM league_rosters lr
-    JOIN riders r ON r.id = lr.rider_id
-    WHERE lr.league_id = ? AND lr.user_id = ?
-    ORDER BY r.class, r.number ASC
-  `).all(id, user.id) as { id: number; name: string; number: number | null; team: string | null; class: string }[];
+  const { data: rosterEntries } = await supabase
+    .from("league_rosters")
+    .select("riders(id, name, number, team, class)")
+    .eq("league_id", id)
+    .eq("user_id", user.id);
+
+  const roster = (rosterEntries || []).map((e) => e.riders as unknown as unknown as Record<string, unknown>);
 
   return NextResponse.json({
     team_name: member.team_name,
@@ -68,11 +77,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const db = getDb();
 
-  const member = db.prepare(
-    "SELECT id FROM league_members WHERE league_id = ? AND user_id = ?"
-  ).get(id, user.id);
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
 
   if (!member) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
@@ -82,20 +93,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (body.team_name !== undefined) {
     const name = (body.team_name as string).trim().slice(0, 30);
-    db.prepare("UPDATE league_members SET team_name = ? WHERE league_id = ? AND user_id = ?")
-      .run(name || null, id, user.id);
+    await supabase
+      .from("league_members")
+      .update({ team_name: name || null })
+      .eq("league_id", id)
+      .eq("user_id", user.id);
   }
 
   if (body.team_logo !== undefined) {
     const logoData = body.team_logo as string;
-    if (logoData) {
-      // Store bike config JSON directly
-      db.prepare("UPDATE league_members SET team_logo = ? WHERE league_id = ? AND user_id = ?")
-        .run(logoData, id, user.id);
-    } else {
-      db.prepare("UPDATE league_members SET team_logo = NULL WHERE league_id = ? AND user_id = ?")
-        .run(id, user.id);
-    }
+    await supabase
+      .from("league_members")
+      .update({ team_logo: logoData || null })
+      .eq("league_id", id)
+      .eq("user_id", user.id);
   }
 
   return NextResponse.json({ success: true });

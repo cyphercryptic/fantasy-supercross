@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import getDb from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 
 // GET /api/leagues/[id] — league details
@@ -10,25 +10,37 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const db = getDb();
 
-  const league = db.prepare("SELECT * FROM leagues WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+  const { data: league } = await supabase
+    .from("leagues")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
   if (!league) {
     return NextResponse.json({ error: "League not found" }, { status: 404 });
   }
 
-  const member = db.prepare("SELECT id FROM league_members WHERE league_id = ? AND user_id = ?").get(id, user.id);
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
   if (!member) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
-  const members = db.prepare(`
-    SELECT u.id, u.username, lm.joined_at
-    FROM league_members lm
-    JOIN users u ON u.id = lm.user_id
-    WHERE lm.league_id = ?
-    ORDER BY lm.joined_at ASC
-  `).all(id);
+  const { data: rawMembers } = await supabase
+    .from("league_members")
+    .select("joined_at, users(id, username)")
+    .eq("league_id", id)
+    .order("joined_at", { ascending: true });
+
+  const members = (rawMembers || []).map((m) => ({
+    id: (m.users as unknown as unknown as Record<string, unknown>).id,
+    username: (m.users as unknown as unknown as Record<string, unknown>).username,
+    joined_at: m.joined_at,
+  }));
 
   return NextResponse.json({
     ...league,
@@ -45,13 +57,16 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   }
 
   const { id } = await params;
-  const db = getDb();
 
-  const league = db.prepare("SELECT commissioner_id FROM leagues WHERE id = ?").get(id) as { commissioner_id: number } | undefined;
+  const { data: league } = await supabase
+    .from("leagues")
+    .select("commissioner_id")
+    .eq("id", id)
+    .maybeSingle();
   if (!league || league.commissioner_id !== user.id) {
     return NextResponse.json({ error: "Commissioner access required" }, { status: 403 });
   }
 
-  db.prepare("DELETE FROM leagues WHERE id = ?").run(id);
+  await supabase.from("leagues").delete().eq("id", id);
   return NextResponse.json({ success: true });
 }

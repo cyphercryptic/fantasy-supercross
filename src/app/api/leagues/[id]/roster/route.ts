@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import getDb from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 
 // GET /api/leagues/[id]/roster — get user's roster for this league
@@ -10,20 +10,24 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const db = getDb();
 
-  const member = db.prepare("SELECT id FROM league_members WHERE league_id = ? AND user_id = ?").get(id, user.id);
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
   if (!member) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
-  const roster = db.prepare(`
-    SELECT r.* FROM league_rosters lr
-    JOIN riders r ON r.id = lr.rider_id
-    WHERE lr.league_id = ? AND lr.user_id = ?
-    ORDER BY r.class, r.number ASC
-  `).all(id, user.id);
+  const { data: entries } = await supabase
+    .from("league_rosters")
+    .select("riders(*)")
+    .eq("league_id", id)
+    .eq("user_id", user.id);
 
+  const roster = (entries || []).map((e) => e.riders);
   return NextResponse.json(roster);
 }
 
@@ -36,36 +40,54 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id } = await params;
   const { riderId } = await req.json();
-  const db = getDb();
 
-  const member = db.prepare("SELECT id FROM league_members WHERE league_id = ? AND user_id = ?").get(id, user.id);
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
   if (!member) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
-  const league = db.prepare("SELECT roster_size FROM leagues WHERE id = ?").get(id) as { roster_size: number };
+  const { data: league } = await supabase
+    .from("leagues")
+    .select("roster_size")
+    .eq("id", id)
+    .single();
 
-  const currentCount = db.prepare(
-    "SELECT COUNT(*) as cnt FROM league_rosters WHERE league_id = ? AND user_id = ?"
-  ).get(id, user.id) as { cnt: number };
+  const { count: currentCount } = await supabase
+    .from("league_rosters")
+    .select("*", { count: "exact", head: true })
+    .eq("league_id", id)
+    .eq("user_id", user.id);
 
-  if (currentCount.cnt >= league.roster_size) {
-    return NextResponse.json({ error: `Roster is full (${league.roster_size} max)` }, { status: 400 });
+  if ((currentCount || 0) >= league!.roster_size) {
+    return NextResponse.json({ error: `Roster is full (${league!.roster_size} max)` }, { status: 400 });
   }
 
-  const rider = db.prepare("SELECT id FROM riders WHERE id = ?").get(riderId);
+  const { data: rider } = await supabase
+    .from("riders")
+    .select("id")
+    .eq("id", riderId)
+    .maybeSingle();
   if (!rider) {
     return NextResponse.json({ error: "Rider not found" }, { status: 404 });
   }
 
-  const existing = db.prepare(
-    "SELECT id FROM league_rosters WHERE league_id = ? AND user_id = ? AND rider_id = ?"
-  ).get(id, user.id, riderId);
+  const { data: existing } = await supabase
+    .from("league_rosters")
+    .select("id")
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .eq("rider_id", riderId)
+    .maybeSingle();
   if (existing) {
     return NextResponse.json({ error: "Already on your roster" }, { status: 400 });
   }
 
-  db.prepare("INSERT INTO league_rosters (league_id, user_id, rider_id) VALUES (?, ?, ?)").run(id, user.id, riderId);
+  await supabase.from("league_rosters").insert({ league_id: Number(id), user_id: user.id, rider_id: riderId });
   return NextResponse.json({ success: true });
 }
 
@@ -78,18 +100,30 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   const { id } = await params;
   const { riderId } = await req.json();
-  const db = getDb();
 
-  db.prepare(
-    "DELETE FROM league_rosters WHERE league_id = ? AND user_id = ? AND rider_id = ?"
-  ).run(id, user.id, riderId);
+  await supabase
+    .from("league_rosters")
+    .delete()
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .eq("rider_id", riderId);
 
   // Also remove from upcoming lineups
-  db.prepare(`
-    DELETE FROM weekly_lineups
-    WHERE league_id = ? AND user_id = ? AND rider_id = ?
-    AND race_id IN (SELECT id FROM races WHERE status = 'upcoming')
-  `).run(id, user.id, riderId);
+  const { data: upcomingRaces } = await supabase
+    .from("races")
+    .select("id")
+    .eq("status", "upcoming");
+  const upcomingIds = (upcomingRaces || []).map((r) => r.id);
+
+  if (upcomingIds.length > 0) {
+    await supabase
+      .from("weekly_lineups")
+      .delete()
+      .eq("league_id", id)
+      .eq("user_id", user.id)
+      .eq("rider_id", riderId)
+      .in("race_id", upcomingIds);
+  }
 
   return NextResponse.json({ success: true });
 }

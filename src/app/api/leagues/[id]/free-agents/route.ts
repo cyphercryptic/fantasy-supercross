@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import getDb from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 
 // GET — list all free agents (riders not on any roster in this league)
@@ -10,48 +10,81 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const db = getDb();
 
-  const member = db.prepare("SELECT id FROM league_members WHERE league_id = ? AND user_id = ?").get(id, user.id);
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
   if (!member) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
-  // Free agents = riders NOT on any team's roster in this league
-  const freeAgents = db.prepare(`
-    SELECT r.* FROM riders r
-    WHERE r.id NOT IN (
-      SELECT rider_id FROM league_rosters WHERE league_id = ?
-    )
-    ORDER BY r.class, r.name ASC
-  `).all(id);
+  // Get rostered rider IDs
+  const { data: rostered } = await supabase
+    .from("league_rosters")
+    .select("rider_id")
+    .eq("league_id", id);
+  const rosteredIds = (rostered || []).map((r) => r.rider_id);
 
-  // Also get user's current roster
-  const myRoster = db.prepare(`
-    SELECT r.* FROM league_rosters lr
-    JOIN riders r ON r.id = lr.rider_id
-    WHERE lr.league_id = ? AND lr.user_id = ?
-    ORDER BY r.class, r.number ASC
-  `).all(id, user.id);
+  // Free agents = riders NOT on any roster
+  let freeAgentQuery = supabase.from("riders").select("*").order("class").order("name");
+  if (rosteredIds.length > 0) {
+    freeAgentQuery = freeAgentQuery.not("id", "in", `(${rosteredIds.join(",")})`);
+  }
+  const { data: freeAgents } = await freeAgentQuery;
 
-  // Get recent transactions for this league
-  const transactions = db.prepare(`
-    SELECT t.*, u.username,
-      ar.name as added_rider_name, ar.number as added_rider_number, ar.class as added_rider_class,
-      dr.name as dropped_rider_name, dr.number as dropped_rider_number, dr.class as dropped_rider_class
-    FROM transactions t
-    JOIN users u ON u.id = t.user_id
-    LEFT JOIN riders ar ON ar.id = t.added_rider_id
-    LEFT JOIN riders dr ON dr.id = t.dropped_rider_id
-    WHERE t.league_id = ?
-    ORDER BY t.created_at DESC
-    LIMIT 20
-  `).all(id);
+  // User's current roster
+  const { data: rosterEntries } = await supabase
+    .from("league_rosters")
+    .select("riders(*)")
+    .eq("league_id", id)
+    .eq("user_id", user.id);
+  const myRoster = (rosterEntries || []).map((e) => e.riders);
 
-  // Get league roster size
-  const league = db.prepare("SELECT roster_size FROM leagues WHERE id = ?").get(id) as { roster_size: number };
+  // Recent transactions
+  const { data: rawTxns } = await supabase
+    .from("transactions")
+    .select("*, users(username)")
+    .eq("league_id", id)
+    .order("created_at", { ascending: false })
+    .limit(20);
 
-  return NextResponse.json({ freeAgents, myRoster, transactions, rosterSize: league.roster_size });
+  // Get rider details for transactions
+  const addedIds = (rawTxns || []).map((t) => t.added_rider_id).filter(Boolean) as number[];
+  const droppedIds = (rawTxns || []).map((t) => t.dropped_rider_id).filter(Boolean) as number[];
+  const allTxnRiderIds = [...new Set([...addedIds, ...droppedIds])];
+
+  let riderMap = new Map<number, Record<string, unknown>>();
+  if (allTxnRiderIds.length > 0) {
+    const { data: txnRiders } = await supabase
+      .from("riders")
+      .select("id, name, number, class")
+      .in("id", allTxnRiderIds);
+    riderMap = new Map((txnRiders || []).map((r) => [r.id, r]));
+  }
+
+  const transactions = (rawTxns || []).map((t) => {
+    const added = t.added_rider_id ? riderMap.get(t.added_rider_id) : null;
+    const dropped = t.dropped_rider_id ? riderMap.get(t.dropped_rider_id) : null;
+    return {
+      id: t.id, league_id: t.league_id, user_id: t.user_id, type: t.type,
+      added_rider_id: t.added_rider_id, dropped_rider_id: t.dropped_rider_id,
+      created_at: t.created_at,
+      username: (t.users as unknown as unknown as Record<string, unknown>)?.username,
+      added_rider_name: added?.name, added_rider_number: added?.number, added_rider_class: added?.class,
+      dropped_rider_name: dropped?.name, dropped_rider_number: dropped?.number, dropped_rider_class: dropped?.class,
+    };
+  });
+
+  const { data: league } = await supabase
+    .from("leagues")
+    .select("roster_size")
+    .eq("id", id)
+    .single();
+
+  return NextResponse.json({ freeAgents, myRoster, transactions, rosterSize: league!.roster_size });
 }
 
 // POST — add/drop transaction
@@ -63,19 +96,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id } = await params;
   const { addRiderId, dropRiderId } = await req.json();
-  const db = getDb();
 
-  const member = db.prepare("SELECT id FROM league_members WHERE league_id = ? AND user_id = ?").get(id, user.id);
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
   if (!member) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
-  const league = db.prepare("SELECT roster_size, draft_status FROM leagues WHERE id = ?").get(id) as {
-    roster_size: number;
-    draft_status: string;
-  };
+  const { data: league } = await supabase
+    .from("leagues")
+    .select("roster_size, draft_status")
+    .eq("id", id)
+    .single();
 
-  if (league.draft_status !== "completed") {
+  if (league!.draft_status !== "completed") {
     return NextResponse.json({ error: "Draft must be completed before making transactions" }, { status: 400 });
   }
 
@@ -83,71 +121,92 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Must specify a rider to add or drop" }, { status: 400 });
   }
 
-  const currentRoster = db.prepare(
-    "SELECT COUNT(*) as cnt FROM league_rosters WHERE league_id = ? AND user_id = ?"
-  ).get(id, user.id) as { cnt: number };
+  const { count: currentRosterCount } = await supabase
+    .from("league_rosters")
+    .select("*", { count: "exact", head: true })
+    .eq("league_id", id)
+    .eq("user_id", user.id);
 
-  // If adding a rider, verify they're a free agent
   if (addRiderId) {
-    const onRoster = db.prepare(
-      "SELECT id FROM league_rosters WHERE league_id = ? AND rider_id = ?"
-    ).get(id, addRiderId);
+    const { data: onRoster } = await supabase
+      .from("league_rosters")
+      .select("id")
+      .eq("league_id", id)
+      .eq("rider_id", addRiderId)
+      .maybeSingle();
     if (onRoster) {
       return NextResponse.json({ error: "Rider is already on a team's roster" }, { status: 400 });
     }
 
-    const riderExists = db.prepare("SELECT id FROM riders WHERE id = ?").get(addRiderId);
+    const { data: riderExists } = await supabase
+      .from("riders")
+      .select("id")
+      .eq("id", addRiderId)
+      .maybeSingle();
     if (!riderExists) {
       return NextResponse.json({ error: "Rider not found" }, { status: 404 });
     }
 
-    // Check roster limit: if not dropping, must have room
-    if (!dropRiderId && currentRoster.cnt >= league.roster_size) {
-      return NextResponse.json({ error: `Roster is full (${league.roster_size}). You must drop a rider first.` }, { status: 400 });
+    if (!dropRiderId && (currentRosterCount || 0) >= league!.roster_size) {
+      return NextResponse.json({ error: `Roster is full (${league!.roster_size}). You must drop a rider first.` }, { status: 400 });
     }
   }
 
-  // If dropping a rider, verify they're on user's roster
   if (dropRiderId) {
-    const onMyRoster = db.prepare(
-      "SELECT id FROM league_rosters WHERE league_id = ? AND user_id = ? AND rider_id = ?"
-    ).get(id, user.id, dropRiderId);
+    const { data: onMyRoster } = await supabase
+      .from("league_rosters")
+      .select("id")
+      .eq("league_id", id)
+      .eq("user_id", user.id)
+      .eq("rider_id", dropRiderId)
+      .maybeSingle();
     if (!onMyRoster) {
       return NextResponse.json({ error: "Rider is not on your roster" }, { status: 400 });
     }
   }
 
-  // Execute the transaction atomically
-  const txn = db.transaction(() => {
-    // Drop rider
-    if (dropRiderId) {
-      db.prepare("DELETE FROM league_rosters WHERE league_id = ? AND user_id = ? AND rider_id = ?")
-        .run(id, user.id, dropRiderId);
-      // Remove from upcoming lineups
-      db.prepare(`
-        DELETE FROM weekly_lineups
-        WHERE league_id = ? AND user_id = ? AND rider_id = ?
-        AND race_id IN (SELECT id FROM races WHERE status = 'upcoming')
-      `).run(id, user.id, dropRiderId);
+  // Execute the add/drop
+  if (dropRiderId) {
+    await supabase
+      .from("league_rosters")
+      .delete()
+      .eq("league_id", id)
+      .eq("user_id", user.id)
+      .eq("rider_id", dropRiderId);
+
+    // Remove from upcoming lineups
+    const { data: upcomingRaces } = await supabase
+      .from("races")
+      .select("id")
+      .eq("status", "upcoming");
+    const upcomingIds = (upcomingRaces || []).map((r) => r.id);
+
+    if (upcomingIds.length > 0) {
+      await supabase
+        .from("weekly_lineups")
+        .delete()
+        .eq("league_id", id)
+        .eq("user_id", user.id)
+        .eq("rider_id", dropRiderId)
+        .in("race_id", upcomingIds);
     }
+  }
 
-    // Add rider
-    if (addRiderId) {
-      db.prepare("INSERT INTO league_rosters (league_id, user_id, rider_id) VALUES (?, ?, ?)")
-        .run(id, user.id, addRiderId);
-    }
+  if (addRiderId) {
+    await supabase.from("league_rosters").insert({
+      league_id: Number(id), user_id: user.id, rider_id: addRiderId,
+    });
+  }
 
-    // Log the transaction
-    let type = "add_drop";
-    if (addRiderId && !dropRiderId) type = "add";
-    if (!addRiderId && dropRiderId) type = "drop";
+  // Log the transaction
+  let type = "add_drop";
+  if (addRiderId && !dropRiderId) type = "add";
+  if (!addRiderId && dropRiderId) type = "drop";
 
-    db.prepare(
-      "INSERT INTO transactions (league_id, user_id, type, added_rider_id, dropped_rider_id) VALUES (?, ?, ?, ?, ?)"
-    ).run(id, user.id, type, addRiderId || null, dropRiderId || null);
+  await supabase.from("transactions").insert({
+    league_id: Number(id), user_id: user.id, type,
+    added_rider_id: addRiderId || null, dropped_rider_id: dropRiderId || null,
   });
-
-  txn();
 
   return NextResponse.json({ success: true });
 }

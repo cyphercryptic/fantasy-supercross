@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import getDb from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 
 // GET /api/leagues/[id]/rider-stats — stats for all riders on user's roster
@@ -10,72 +10,88 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const db = getDb();
 
-  const member = db.prepare("SELECT id FROM league_members WHERE league_id = ? AND user_id = ?").get(id, user.id);
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
   if (!member) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
   // Get roster rider IDs
-  const rosterRiders = db.prepare(
-    "SELECT rider_id FROM league_rosters WHERE league_id = ? AND user_id = ?"
-  ).all(id, user.id) as { rider_id: number }[];
+  const { data: rosterEntries } = await supabase
+    .from("league_rosters")
+    .select("rider_id")
+    .eq("league_id", id)
+    .eq("user_id", user.id);
 
-  if (rosterRiders.length === 0) {
+  if (!rosterEntries || rosterEntries.length === 0) {
     return NextResponse.json({});
   }
 
-  const riderIds = rosterRiders.map((r) => r.rider_id);
-  const placeholders = riderIds.map(() => "?").join(",");
+  const riderIds = rosterEntries.map((r) => r.rider_id);
+
+  // Get all race results for these riders
+  const { data: allResults } = await supabase
+    .from("race_results")
+    .select("rider_id, position, points, races(round_number)")
+    .in("rider_id", riderIds)
+    .order("rider_id");
+
+  // Get bonus stats
+  const { data: allBonuses } = await supabase
+    .from("race_bonuses")
+    .select("rider_id, points")
+    .in("rider_id", riderIds);
 
   // Aggregate stats per rider
-  const stats = db.prepare(`
-    SELECT
-      rr.rider_id,
-      COUNT(rr.id) as races_raced,
-      ROUND(AVG(rr.position), 1) as avg_finish,
-      SUM(rr.points) as total_points
-    FROM race_results rr
-    WHERE rr.rider_id IN (${placeholders})
-    GROUP BY rr.rider_id
-  `).all(...riderIds) as {
-    rider_id: number;
-    races_raced: number;
-    avg_finish: number;
-    total_points: number;
-  }[];
+  const statsMap = new Map<number, {
+    racesRaced: number;
+    totalPositionPoints: number;
+    totalBonus: number;
+    positionSum: number;
+    recent: { round: number; position: number; points: number }[];
+  }>();
 
-  // Bonus points per rider
-  const bonusStats = db.prepare(`
-    SELECT rider_id, SUM(points) as total_bonus
-    FROM race_bonuses
-    WHERE rider_id IN (${placeholders})
-    GROUP BY rider_id
-  `).all(...riderIds) as { rider_id: number; total_bonus: number }[];
+  for (const riderId of riderIds) {
+    statsMap.set(riderId, { racesRaced: 0, totalPositionPoints: 0, totalBonus: 0, positionSum: 0, recent: [] });
+  }
 
-  const bonusMap = new Map(bonusStats.map((b) => [b.rider_id, b.total_bonus]));
+  // Process results
+  const resultsByRider = new Map<number, typeof allResults>();
+  for (const r of allResults || []) {
+    const arr = resultsByRider.get(r.rider_id) || [];
+    arr.push(r);
+    resultsByRider.set(r.rider_id, arr);
+  }
 
-  // Last 3 results per rider
-  const recentResults = db.prepare(`
-    SELECT rr.rider_id, rr.position, rr.points, r.round_number
-    FROM race_results rr
-    JOIN races r ON r.id = rr.race_id
-    WHERE rr.rider_id IN (${placeholders})
-    ORDER BY r.round_number DESC
-  `).all(...riderIds) as {
-    rider_id: number;
-    position: number;
-    points: number;
-    round_number: number;
-  }[];
+  for (const [riderId, results] of resultsByRider) {
+    if (!results) continue;
+    const stat = statsMap.get(riderId)!;
+    stat.racesRaced = results.length;
+    stat.totalPositionPoints = results.reduce((sum, r) => sum + r.points, 0);
+    stat.positionSum = results.reduce((sum, r) => sum + (r.position || 0), 0);
 
-  // Group recent results by rider, take last 3
-  const recentByRider = new Map<number, typeof recentResults>();
-  for (const r of recentResults) {
-    const arr = recentByRider.get(r.rider_id) || [];
-    if (arr.length < 3) arr.push(r);
-    recentByRider.set(r.rider_id, arr);
+    // Recent results (sorted by round_number desc, take 3)
+    const sorted = [...results].sort((a, b) => {
+      const aRound = (a.races as unknown as unknown as Record<string, unknown>)?.round_number as number || 0;
+      const bRound = (b.races as unknown as unknown as Record<string, unknown>)?.round_number as number || 0;
+      return bRound - aRound;
+    });
+    stat.recent = sorted.slice(0, 3).map((r) => ({
+      round: (r.races as unknown as unknown as Record<string, unknown>)?.round_number as number || 0,
+      position: r.position,
+      points: r.points,
+    }));
+  }
+
+  // Process bonuses
+  for (const b of allBonuses || []) {
+    const stat = statsMap.get(b.rider_id);
+    if (stat) stat.totalBonus += b.points;
   }
 
   // Build response
@@ -87,18 +103,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     recent: { round: number; position: number; points: number }[];
   }> = {};
 
-  for (const s of stats) {
-    result[s.rider_id] = {
-      avgFinish: s.avg_finish,
-      totalPoints: s.total_points + (bonusMap.get(s.rider_id) || 0),
-      totalBonus: bonusMap.get(s.rider_id) || 0,
-      racesRaced: s.races_raced,
-      recent: (recentByRider.get(s.rider_id) || []).map((r) => ({
-        round: r.round_number,
-        position: r.position,
-        points: r.points,
-      })),
-    };
+  for (const [riderId, stat] of statsMap) {
+    if (stat.racesRaced > 0) {
+      result[riderId] = {
+        avgFinish: Math.round((stat.positionSum / stat.racesRaced) * 10) / 10,
+        totalPoints: stat.totalPositionPoints + stat.totalBonus,
+        totalBonus: stat.totalBonus,
+        racesRaced: stat.racesRaced,
+        recent: stat.recent,
+      };
+    }
   }
 
   return NextResponse.json(result);

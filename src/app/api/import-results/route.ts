@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import getDb from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import { getPointsForPosition } from "@/lib/scoring";
 
@@ -11,33 +11,22 @@ interface ParsedRace {
   isOverall?: boolean;
 }
 
-interface ParsedResult {
-  position: number;
-  riderName: string;
-  riderNumber: number | null;
-  hasHoleshot: boolean;
-}
-
 function classifyRace(name: string): ParsedRace["type"] {
   const n = name.toLowerCase();
   if (n.includes("250") && n.includes("heat")) return "heat_250";
   if (n.includes("450") && n.includes("heat")) return "heat_450";
   if (n.includes("250") && n.includes("lcq")) return "lcq_250";
   if (n.includes("450") && n.includes("lcq")) return "lcq_450";
-  // "Overall Results" for Triple Crown, "Main Event" for regular rounds
   if (n.includes("250") && (n.includes("main") || n.includes("overall"))) return "main_250";
   if (n.includes("450") && (n.includes("main") || n.includes("overall"))) return "main_450";
-  // Skip individual Triple Crown races (Race #1, #2, #3) — use Overall instead
   return "other";
 }
 
 function getHeatNumber(name: string): number | undefined {
-  // Match "Heat #1", "Heat #2", "Heat 1", "Heat 2"
   const match = name.match(/Heat\s*#?(\d)/i);
   return match ? parseInt(match[1]) : undefined;
 }
 
-// Parse driverNames array from HTML page JavaScript
 function parseDriverNames(html: string): string[] {
   const names: string[] = [];
   const regex = /driverNames\.push\('([^']+)'\)/g;
@@ -48,41 +37,17 @@ function parseDriverNames(html: string): string[] {
   return names;
 }
 
-// Parse the PDF text for detailed results with rider numbers and holeshot
-function parsePdfResults(text: string): ParsedResult[] {
-  const results: ParsedResult[] = [];
-  // Match lines like: 1  3  Eli Tomac  KTM  ...
-  // Or with holeshot: 3  26  Jorge Prado (HS)  KTM  ...
-  const lines = text.split("\n");
-  for (const line of lines) {
-    // Try to match: POS  #  RIDER NAME (optional HS)  BIKE
-    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+?)\s+(KTM|Yamaha|Honda|Kawasaki|Suzuki|Husqvarna|Ducati|GasGas|GASGAS|Triumph|Beta|Stark)\s/i);
-    if (match) {
-      const position = parseInt(match[1]);
-      const riderNumber = parseInt(match[2]);
-      let riderName = match[3].trim();
-      const hasHoleshot = /\(HS\)/i.test(riderName);
-      riderName = riderName.replace(/\s*\(HS\)\s*/i, "").trim();
-      results.push({ position, riderNumber, riderName, hasHoleshot });
-    }
-  }
-  return results;
-}
-
-// Fetch event page and extract race links
 async function fetchEventRaces(eventId: string): Promise<ParsedRace[]> {
   const url = `https://results.supercrosslive.com/results/?p=view_event&id=${eventId}`;
   const res = await fetch(url);
   const html = await res.text();
 
   const races: ParsedRace[] = [];
-  // Match full <a> tags linking to race results (multiline, with comments inside)
   const linkRegex = /href="\/results\/\?p=view_race_result(?:&amp;|&)id=(\d+)"[^>]*>([\s\S]*?)<\/a>/gi;
   let match;
   while ((match = linkRegex.exec(html)) !== null) {
-    // Strip HTML comments and tags, then trim whitespace to get race name
     const rawContent = match[2].replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, "").trim();
-    if (!rawContent) continue; // Skip PDF/print links with no text
+    if (!rawContent) continue;
     const raceType = classifyRace(rawContent);
     if (raceType !== "other") {
       races.push({
@@ -94,7 +59,6 @@ async function fetchEventRaces(eventId: string): Promise<ParsedRace[]> {
     }
   }
 
-  // Also match Triple Crown overall results (view_multi_main_result)
   const overallRegex = /href="\/results\/\?p=view_multi_main_result(?:&amp;|&)id=(\d+)"[^>]*>([\s\S]*?)<\/a>/gi;
   while ((match = overallRegex.exec(html)) !== null) {
     const rawContent = match[2].replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, "").trim();
@@ -113,7 +77,6 @@ async function fetchEventRaces(eventId: string): Promise<ParsedRace[]> {
   return races;
 }
 
-// Parse HTML table from Overall Results pages (Triple Crown)
 async function fetchOverallResults(raceUrl: string): Promise<string[]> {
   const res = await fetch(raceUrl);
   const html = await res.text();
@@ -127,28 +90,10 @@ async function fetchOverallResults(raceUrl: string): Promise<string[]> {
   return names;
 }
 
-// Fetch a race result page and get finishing order from driverNames
 async function fetchRaceResults(raceUrl: string): Promise<string[]> {
   const res = await fetch(raceUrl);
   const html = await res.text();
   return parseDriverNames(html);
-}
-
-// Fetch PDF results for main events (has rider numbers + holeshot info)
-async function fetchPdfResults(raceUrl: string): Promise<ParsedResult[]> {
-  // Get the PDF export URL by following the redirect
-  const raceId = raceUrl.match(/id=(\d+)/)?.[1];
-  if (!raceId) return [];
-
-  const pdfUrl = `https://results.supercrosslive.com/results/?p=view_race_result&id=${raceId}&export=pdf`;
-  const res = await fetch(pdfUrl, { redirect: "manual" });
-  const redirectUrl = res.headers.get("location");
-
-  if (!redirectUrl) return [];
-
-  // We can't easily parse the PDF server-side without a library,
-  // so we'll rely on name matching from the HTML driverNames instead
-  return [];
 }
 
 // POST /api/import-results — fetch and import results from supercrosslive.com
@@ -165,67 +110,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "eventId and raceId required" }, { status: 400 });
   }
 
-  const db = getDb();
-
   // Verify the race exists
-  const race = db.prepare("SELECT * FROM races WHERE id = ?").get(raceId) as { id: number; name: string } | undefined;
+  const { data: race } = await supabase
+    .from("races")
+    .select("id, name")
+    .eq("id", raceId)
+    .maybeSingle();
   if (!race) {
     return NextResponse.json({ error: "Race not found" }, { status: 404 });
   }
 
   // Get all riders from our database
-  const allRiders = db.prepare("SELECT id, name, number, team, class FROM riders").all() as {
-    id: number;
-    name: string;
-    number: number | null;
-    team: string | null;
-    class: string | null;
-  }[];
+  const { data: allRiders } = await supabase
+    .from("riders")
+    .select("id, name, number, team, class");
 
-  // Build a name lookup map (lowercase, last name + first name variations)
-  function buildNameLookup() {
-    const lookup = new Map<string, typeof allRiders[0]>();
-    for (const rider of allRiders) {
-      // Exact lowercase match
-      lookup.set(rider.name.toLowerCase(), rider);
-      // Try "FIRST LAST" format (supercrosslive uses this)
-      const parts = rider.name.split(" ");
-      if (parts.length >= 2) {
-        // Our DB might have "First Last", supercrosslive has "FIRST LAST"
-        lookup.set(rider.name.toUpperCase(), rider);
-      }
-    }
-    return lookup;
-  }
-
-  const nameLookup = buildNameLookup();
+  const riders = allRiders || [];
 
   function findRider(scxName: string) {
-    // Try exact match
-    const exact = nameLookup.get(scxName.toLowerCase()) || nameLookup.get(scxName.toUpperCase());
+    const exact = riders.find((r) => r.name.toLowerCase() === scxName.toLowerCase());
     if (exact) return exact;
-
-    // Try case-insensitive comparison
-    for (const rider of allRiders) {
-      if (rider.name.toLowerCase() === scxName.toLowerCase()) return rider;
-      // Handle middle initials or suffixes - e.g., "R.J. Hampshire" vs "RJ Hampshire"
+    for (const rider of riders) {
       const normalizedScx = scxName.replace(/\./g, "").toLowerCase();
       const normalizedDb = rider.name.replace(/\./g, "").toLowerCase();
       if (normalizedScx === normalizedDb) return rider;
     }
-
     return null;
   }
 
   try {
-    // Step 1: Fetch event page to get race links
     const eventRaces = await fetchEventRaces(eventId);
 
     if (eventRaces.length === 0) {
       return NextResponse.json({ error: "No races found on event page" }, { status: 400 });
     }
 
-    // Step 2: Fetch results for each race type
     const mainResults: { type: string; results: string[] }[] = [];
     const bonuses: { riderId: number; type: string }[] = [];
     const importLog: string[] = [];
@@ -246,7 +165,6 @@ export async function POST(req: NextRequest) {
         mainResults.push({ type: eventRace.type, results: finishOrder });
       }
 
-      // Heat race winners get bonus points
       if (eventRace.type === "heat_250" || eventRace.type === "heat_450") {
         const winnerName = finishOrder[0];
         const winner = findRider(winnerName);
@@ -260,7 +178,6 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // LCQ winners get bonus points
       if (eventRace.type === "lcq_250" || eventRace.type === "lcq_450") {
         const winnerName = finishOrder[0];
         const winner = findRider(winnerName);
@@ -274,61 +191,47 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Note: Holeshot info is only available in the PDF results (marked as "(HS)")
-    // and cannot be reliably detected from the HTML position data.
-    // The admin should set holeshots manually via "Edit Results" after importing.
     importLog.push("");
     importLog.push("NOTE: Holeshot bonuses must be set manually via Edit Results.");
 
-    // Step 4: Save results to database
-    const upsertResult = db.prepare(
-      `INSERT INTO race_results (race_id, rider_id, position, points)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(race_id, rider_id) DO UPDATE SET position = ?, points = ?`
-    );
-
-    const upsertBonus = db.prepare(
-      `INSERT INTO race_bonuses (race_id, rider_id, bonus_type, points)
-       VALUES (?, ?, ?, 1)
-       ON CONFLICT(race_id, rider_id, bonus_type) DO UPDATE SET points = 1`
-    );
-
-    const deleteOldBonuses = db.prepare("DELETE FROM race_bonuses WHERE race_id = ?");
-
+    // Save results
+    const upsertData: { race_id: number; rider_id: number; position: number; points: number }[] = [];
     let resultsImported = 0;
 
-    db.transaction(() => {
-      // Import main event results
-      for (const main of mainResults) {
-        for (let i = 0; i < main.results.length; i++) {
-          const position = i + 1;
-          const riderName = main.results[i];
-          const rider = findRider(riderName);
-          if (rider) {
-            const pts = getPointsForPosition(position);
-            upsertResult.run(raceId, rider.id, position, pts, position, pts);
-            resultsImported++;
-          } else {
-            importLog.push(`WARNING: Could not match "${riderName}" (P${position}) to any rider in database`);
-          }
+    for (const main of mainResults) {
+      for (let i = 0; i < main.results.length; i++) {
+        const position = i + 1;
+        const riderName = main.results[i];
+        const rider = findRider(riderName);
+        if (rider) {
+          upsertData.push({
+            race_id: raceId, rider_id: rider.id, position, points: getPointsForPosition(position),
+          });
+          resultsImported++;
+        } else {
+          importLog.push(`WARNING: Could not match "${riderName}" (P${position}) to any rider in database`);
         }
       }
+    }
 
-      // Clear old bonuses and insert new ones
-      deleteOldBonuses.run(raceId);
-      for (const bonus of bonuses) {
-        upsertBonus.run(raceId, bonus.riderId, bonus.type);
-      }
-    })();
+    if (upsertData.length > 0) {
+      await supabase.from("race_results").upsert(upsertData, { onConflict: "race_id,rider_id" });
+    }
+
+    // Clear old bonuses and insert new
+    await supabase.from("race_bonuses").delete().eq("race_id", raceId);
+    if (bonuses.length > 0) {
+      const bonusData = bonuses.map((b) => ({
+        race_id: raceId, rider_id: b.riderId, bonus_type: b.type, points: 1,
+      }));
+      await supabase.from("race_bonuses").insert(bonusData);
+    }
 
     // Mark race as completed
-    db.prepare("UPDATE races SET status = 'completed' WHERE id = ?").run(raceId);
+    await supabase.from("races").update({ status: "completed" }).eq("id", raceId);
 
     return NextResponse.json({
-      success: true,
-      resultsImported,
-      bonuses: bonuses.length,
-      log: importLog,
+      success: true, resultsImported, bonuses: bonuses.length, log: importLog,
     });
   } catch (err) {
     console.error("Import error:", err);

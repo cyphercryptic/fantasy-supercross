@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import getDb from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
@@ -13,30 +13,67 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Login required" }, { status: 401 });
   }
 
-  const db = getDb();
   const search = req.nextUrl.searchParams.get("search");
 
   if (search) {
-    const leagues = db.prepare(`
-      SELECT l.id, l.name, l.max_members, l.draft_status, l.created_at,
-        (SELECT COUNT(*) FROM league_members WHERE league_id = l.id) as member_count
-      FROM leagues l
-      WHERE l.name LIKE ?
-      ORDER BY l.name ASC
-      LIMIT 20
-    `).all(`%${search}%`);
-    return NextResponse.json(leagues);
+    const { data: leagues } = await supabase
+      .from("leagues")
+      .select("id, name, max_members, draft_status, created_at")
+      .ilike("name", `%${search}%`)
+      .order("name")
+      .limit(20);
+
+    if (leagues && leagues.length > 0) {
+      const leagueIds = leagues.map((l) => l.id);
+      const { data: members } = await supabase
+        .from("league_members")
+        .select("league_id")
+        .in("league_id", leagueIds);
+
+      const countMap = new Map<number, number>();
+      for (const m of members || []) {
+        countMap.set(m.league_id, (countMap.get(m.league_id) || 0) + 1);
+      }
+
+      return NextResponse.json(
+        leagues.map((l) => ({ ...l, member_count: countMap.get(l.id) || 0 }))
+      );
+    }
+    return NextResponse.json(leagues || []);
   }
 
-  const leagues = db.prepare(`
-    SELECT l.*, lm.joined_at, lm.team_name, lm.team_logo,
-      (SELECT COUNT(*) FROM league_members WHERE league_id = l.id) as member_count,
-      (l.commissioner_id = ?) as is_commissioner
-    FROM leagues l
-    JOIN league_members lm ON lm.league_id = l.id
-    WHERE lm.user_id = ?
-    ORDER BY lm.joined_at DESC
-  `).all(user.id, user.id);
+  const { data: memberEntries } = await supabase
+    .from("league_members")
+    .select("league_id, joined_at, team_name, team_logo, leagues(*)")
+    .eq("user_id", user.id)
+    .order("joined_at", { ascending: false });
+
+  if (!memberEntries || memberEntries.length === 0) {
+    return NextResponse.json([]);
+  }
+
+  const leagueIds = memberEntries.map((m) => m.league_id);
+  const { data: allMembers } = await supabase
+    .from("league_members")
+    .select("league_id")
+    .in("league_id", leagueIds);
+
+  const countMap = new Map<number, number>();
+  for (const m of allMembers || []) {
+    countMap.set(m.league_id, (countMap.get(m.league_id) || 0) + 1);
+  }
+
+  const leagues = memberEntries.map((m) => {
+    const league = m.leagues as unknown as Record<string, unknown>;
+    return {
+      ...league,
+      joined_at: m.joined_at,
+      team_name: m.team_name,
+      team_logo: m.team_logo,
+      member_count: countMap.get(m.league_id) || 0,
+      is_commissioner: (league.commissioner_id as number) === user.id ? 1 : 0,
+    };
+  });
 
   return NextResponse.json(leagues);
 }
@@ -49,15 +86,14 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const db = getDb();
 
-  // Check league limit
-  const userLeagueCount = db.prepare(
-    "SELECT COUNT(*) as cnt FROM league_members WHERE user_id = ?"
-  ).get(user.id) as { cnt: number };
+  const { count: userLeagueCount } = await supabase
+    .from("league_members")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id);
 
   if (body.action === "create") {
-    if (userLeagueCount.cnt >= MAX_LEAGUES) {
+    if ((userLeagueCount || 0) >= MAX_LEAGUES) {
       return NextResponse.json({ error: `You can only be in ${MAX_LEAGUES} leagues` }, { status: 400 });
     }
 
@@ -79,30 +115,42 @@ export async function POST(req: NextRequest) {
     const passwordHash = bcrypt.hashSync(password, 10);
     const inviteCode = uuidv4().slice(0, 8).toUpperCase();
 
-    const result = db.prepare(`
-      INSERT INTO leagues (name, password_hash, invite_code, commissioner_id, max_members, roster_size, lineup_450, lineup_250e, lineup_250w)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(name, passwordHash, inviteCode, user.id, mm, rs, l450, l250e, l250w);
+    const { data: newLeague } = await supabase
+      .from("leagues")
+      .insert({
+        name, password_hash: passwordHash, invite_code: inviteCode, commissioner_id: user.id,
+        max_members: mm, roster_size: rs, lineup_450: l450, lineup_250e: l250e, lineup_250w: l250w,
+      })
+      .select("id")
+      .single();
 
-    const leagueId = result.lastInsertRowid;
-    db.prepare("INSERT INTO league_members (league_id, user_id) VALUES (?, ?)").run(leagueId, user.id);
+    const leagueId = newLeague!.id;
+    await supabase.from("league_members").insert({ league_id: leagueId, user_id: user.id });
 
     return NextResponse.json({ success: true, id: leagueId, invite_code: inviteCode });
   }
 
   if (body.action === "join" || body.action === "join_by_name") {
-    if (userLeagueCount.cnt >= MAX_LEAGUES) {
+    if ((userLeagueCount || 0) >= MAX_LEAGUES) {
       return NextResponse.json({ error: `You can only be in ${MAX_LEAGUES} leagues` }, { status: 400 });
     }
 
     let leagueId: number;
 
     if (body.action === "join") {
-      const league = db.prepare("SELECT id FROM leagues WHERE invite_code = ?").get(body.inviteCode) as { id: number } | undefined;
+      const { data: league } = await supabase
+        .from("leagues")
+        .select("id")
+        .eq("invite_code", body.inviteCode)
+        .maybeSingle();
       if (!league) return NextResponse.json({ error: "Invalid invite code" }, { status: 404 });
       leagueId = league.id;
     } else {
-      const league = db.prepare("SELECT * FROM leagues WHERE id = ?").get(body.leagueId) as { id: number; password_hash: string } | undefined;
+      const { data: league } = await supabase
+        .from("leagues")
+        .select("id, password_hash")
+        .eq("id", body.leagueId)
+        .maybeSingle();
       if (!league) return NextResponse.json({ error: "League not found" }, { status: 404 });
       if (!bcrypt.compareSync(body.password, league.password_hash)) {
         return NextResponse.json({ error: "Wrong password" }, { status: 403 });
@@ -110,29 +158,43 @@ export async function POST(req: NextRequest) {
       leagueId = league.id;
     }
 
-    const existing = db.prepare("SELECT id FROM league_members WHERE league_id = ? AND user_id = ?").get(leagueId, user.id);
+    const { data: existing } = await supabase
+      .from("league_members")
+      .select("id")
+      .eq("league_id", leagueId)
+      .eq("user_id", user.id)
+      .maybeSingle();
     if (existing) return NextResponse.json({ error: "Already a member" }, { status: 400 });
 
-    // Check if league is full
-    const league = db.prepare("SELECT max_members, draft_status FROM leagues WHERE id = ?").get(leagueId) as { max_members: number; draft_status: string };
-    const currentMembers = db.prepare("SELECT COUNT(*) as cnt FROM league_members WHERE league_id = ?").get(leagueId) as { cnt: number };
+    const { data: league } = await supabase
+      .from("leagues")
+      .select("max_members, draft_status")
+      .eq("id", leagueId)
+      .single();
 
-    if (currentMembers.cnt >= league.max_members) {
+    const { count: currentMembers } = await supabase
+      .from("league_members")
+      .select("*", { count: "exact", head: true })
+      .eq("league_id", leagueId);
+
+    if ((currentMembers || 0) >= league!.max_members) {
       return NextResponse.json({ error: "League is full" }, { status: 400 });
     }
-    if (league.draft_status !== "waiting") {
+    if (league!.draft_status !== "waiting") {
       return NextResponse.json({ error: "Draft has already started — cannot join" }, { status: 400 });
     }
 
-    db.prepare("INSERT INTO league_members (league_id, user_id) VALUES (?, ?)").run(leagueId, user.id);
+    await supabase.from("league_members").insert({ league_id: leagueId, user_id: user.id });
     return NextResponse.json({ success: true, id: leagueId });
   }
 
   if (body.action === "start_draft") {
     const { leagueId } = body;
-    const league = db.prepare("SELECT * FROM leagues WHERE id = ?").get(leagueId) as {
-      id: number; commissioner_id: number; max_members: number; draft_status: string; roster_size: number;
-    } | undefined;
+    const { data: league } = await supabase
+      .from("leagues")
+      .select("id, commissioner_id, max_members, draft_status, roster_size")
+      .eq("id", leagueId)
+      .maybeSingle();
 
     if (!league || league.commissioner_id !== user.id) {
       return NextResponse.json({ error: "Commissioner access required" }, { status: 403 });
@@ -141,20 +203,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Draft already started" }, { status: 400 });
     }
 
-    const members = db.prepare("SELECT user_id FROM league_members WHERE league_id = ?").all(leagueId) as { user_id: number }[];
-    if (members.length < league.max_members) {
-      return NextResponse.json({ error: `Waiting for ${league.max_members - members.length} more member(s) to join` }, { status: 400 });
+    const { data: members } = await supabase
+      .from("league_members")
+      .select("user_id")
+      .eq("league_id", leagueId);
+
+    if (!members || members.length < league.max_members) {
+      return NextResponse.json({ error: `Waiting for ${league.max_members - (members?.length || 0)} more member(s) to join` }, { status: 400 });
     }
 
-    // Randomize draft order
     const userIds = members.map((m) => m.user_id);
     for (let i = userIds.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [userIds[i], userIds[j]] = [userIds[j], userIds[i]];
     }
 
-    db.prepare("UPDATE leagues SET draft_status = 'drafting', draft_order = ?, last_pick_at = datetime('now') WHERE id = ?")
-      .run(JSON.stringify(userIds), leagueId);
+    await supabase
+      .from("leagues")
+      .update({ draft_status: "drafting", draft_order: userIds, last_pick_at: new Date().toISOString() })
+      .eq("id", leagueId);
 
     return NextResponse.json({ success: true, draft_order: userIds });
   }

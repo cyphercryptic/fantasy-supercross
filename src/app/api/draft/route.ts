@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import getDb from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 
 const MAX_TEAM_SIZE = 8;
@@ -11,14 +11,11 @@ export async function GET() {
     return NextResponse.json({ error: "Login required" }, { status: 401 });
   }
 
-  const db = getDb();
-  const team = db
-    .prepare(
-      `SELECT r.* FROM user_teams ut
-       JOIN riders r ON r.id = ut.rider_id
-       WHERE ut.user_id = ?`
-    )
-    .all(user.id);
+  const { data: entries } = await supabase
+    .from("user_teams")
+    .select("riders(*)")
+    .eq("user_id", user.id);
+  const team = (entries || []).map((e) => e.riders);
   return NextResponse.json(team);
 }
 
@@ -30,30 +27,31 @@ export async function POST(req: NextRequest) {
   }
 
   const { riderId } = await req.json();
-  const db = getDb();
 
-  // Check team size
-  const teamSize = db
-    .prepare("SELECT COUNT(*) as count FROM user_teams WHERE user_id = ?")
-    .get(user.id) as { count: number };
+  const { count } = await supabase
+    .from("user_teams")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id);
 
-  if (teamSize.count >= MAX_TEAM_SIZE) {
+  if ((count || 0) >= MAX_TEAM_SIZE) {
     return NextResponse.json(
       { error: `Maximum team size is ${MAX_TEAM_SIZE} riders` },
       { status: 400 }
     );
   }
 
-  // Check if already drafted
-  const existing = db
-    .prepare("SELECT id FROM user_teams WHERE user_id = ? AND rider_id = ?")
-    .get(user.id, riderId);
+  const { data: existing } = await supabase
+    .from("user_teams")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("rider_id", riderId)
+    .maybeSingle();
 
   if (existing) {
     return NextResponse.json({ error: "Rider already on your team" }, { status: 400 });
   }
 
-  db.prepare("INSERT INTO user_teams (user_id, rider_id) VALUES (?, ?)").run(user.id, riderId);
+  await supabase.from("user_teams").insert({ user_id: user.id, rider_id: riderId });
   return NextResponse.json({ success: true });
 }
 
@@ -65,7 +63,6 @@ export async function DELETE(req: NextRequest) {
   }
 
   const { riderId } = await req.json();
-  const db = getDb();
-  db.prepare("DELETE FROM user_teams WHERE user_id = ? AND rider_id = ?").run(user.id, riderId);
+  await supabase.from("user_teams").delete().eq("user_id", user.id).eq("rider_id", riderId);
   return NextResponse.json({ success: true });
 }

@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { v4 as uuidv4 } from "uuid";
-import getDb from "./db";
+import { supabase } from "./supabase";
 
 export interface User {
   id: number;
@@ -9,18 +9,17 @@ export interface User {
 }
 
 export async function createSession(userId: number): Promise<string> {
-  const db = getDb();
   const sessionId = uuidv4();
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
-  db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)").run(
-    sessionId,
-    userId,
-    expiresAt
-  );
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  await supabase.from("sessions").insert({
+    id: sessionId,
+    user_id: userId,
+    expires_at: expiresAt,
+  });
   const cookieStore = await cookies();
   cookieStore.set("session", sessionId, {
     httpOnly: true,
-    secure: false, // set to true in production
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: 30 * 24 * 60 * 60,
@@ -33,16 +32,20 @@ export async function getCurrentUser(): Promise<User | null> {
   const sessionCookie = cookieStore.get("session");
   if (!sessionCookie) return null;
 
-  const db = getDb();
-  const session = db
-    .prepare("SELECT * FROM sessions WHERE id = ? AND expires_at > datetime('now')")
-    .get(sessionCookie.value) as { user_id: number } | undefined;
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("*")
+    .eq("id", sessionCookie.value)
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
 
   if (!session) return null;
 
-  const user = db
-    .prepare("SELECT id, username, is_admin FROM users WHERE id = ?")
-    .get(session.user_id) as User | undefined;
+  const { data: user } = await supabase
+    .from("users")
+    .select("id, username, is_admin")
+    .eq("id", session.user_id)
+    .maybeSingle();
 
   return user ?? null;
 }
@@ -51,8 +54,7 @@ export async function destroySession(): Promise<void> {
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("session");
   if (sessionCookie) {
-    const db = getDb();
-    db.prepare("DELETE FROM sessions WHERE id = ?").run(sessionCookie.value);
+    await supabase.from("sessions").delete().eq("id", sessionCookie.value);
     cookieStore.delete("session");
   }
 }

@@ -1,21 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import getDb from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 
 interface League {
   id: number;
   roster_size: number;
   draft_status: string;
-  draft_order: string;
+  draft_order: number[] | null;
   max_members: number;
   draft_pick_timer: number | null;
   last_pick_at: string | null;
-  draft_auto_users: string | null;
+  draft_auto_users: number[] | null;
 }
 
 // Helper: compute whose turn it is and what pick number we're on
 function getSnakeDraftInfo(league: League, pickCount: number) {
-  const order: number[] = JSON.parse(league.draft_order);
+  const order: number[] = league.draft_order || [];
   const numUsers = order.length;
   const totalPicks = numUsers * league.roster_size;
 
@@ -42,46 +42,64 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const db = getDb();
 
-  const member = db.prepare("SELECT id FROM league_members WHERE league_id = ? AND user_id = ?").get(id, user.id);
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
   if (!member) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
-  const league = db.prepare("SELECT * FROM leagues WHERE id = ?").get(id) as League;
+  const { data: league } = await supabase
+    .from("leagues")
+    .select("*")
+    .eq("id", id)
+    .single();
 
   if (league.draft_status === "waiting") {
     return NextResponse.json({ draft_status: "waiting" });
   }
 
   // Get all picks so far
-  const picks = db.prepare(`
-    SELECT dp.pick_number, dp.round, dp.user_id, dp.rider_id,
-      r.name as rider_name, r.number as rider_number, r.team, r.class,
-      u.username
-    FROM draft_picks dp
-    JOIN riders r ON r.id = dp.rider_id
-    JOIN users u ON u.id = dp.user_id
-    WHERE dp.league_id = ?
-    ORDER BY dp.pick_number ASC
-  `).all(id) as { rider_id: number; user_id: number; pick_number: number; rider_name: string; rider_number: number | null; rider_team: string | null; rider_class: string; username: string }[];
+  const { data: rawPicks } = await supabase
+    .from("draft_picks")
+    .select("pick_number, round, user_id, rider_id, riders(name, number, team, class), users(username)")
+    .eq("league_id", id)
+    .order("pick_number", { ascending: true });
+
+  const picks = (rawPicks || []).map((p) => {
+    const rider = p.riders as unknown as Record<string, unknown> | null;
+    const usr = p.users as unknown as Record<string, unknown> | null;
+    return {
+      pick_number: p.pick_number, round: p.round, user_id: p.user_id, rider_id: p.rider_id,
+      rider_name: rider?.name, rider_number: rider?.number, team: rider?.team, class: rider?.class,
+      username: usr?.username,
+    };
+  });
 
   const pickCount = picks.length;
-  const info = getSnakeDraftInfo(league, pickCount);
+  const info = getSnakeDraftInfo(league as League, pickCount);
 
   // Get all members with usernames and team logos
-  const members = db.prepare(`
-    SELECT u.id, u.username, lm.team_name, lm.team_logo FROM league_members lm
-    JOIN users u ON u.id = lm.user_id
-    WHERE lm.league_id = ?
-  `).all(id) as { id: number; username: string; team_name: string | null; team_logo: string | null }[];
+  const { data: rawMembers } = await supabase
+    .from("league_members")
+    .select("user_id, team_name, team_logo, users(id, username)")
+    .eq("league_id", id);
 
-  // Get riders already drafted in this league
+  const members = (rawMembers || []).map((m) => ({
+    id: (m.users as unknown as unknown as Record<string, unknown>).id,
+    username: (m.users as unknown as unknown as Record<string, unknown>).username,
+    team_name: m.team_name,
+    team_logo: m.team_logo,
+  }));
+
   const draftedRiderIds = picks.map((p) => p.rider_id);
 
-  const autoUsers: number[] = JSON.parse(league.draft_auto_users || "[]");
-  const baseTimer = league.draft_pick_timer || 60;
+  const autoUsers: number[] = (league as League).draft_auto_users || [];
+  const baseTimer = (league as League).draft_pick_timer || 60;
   const effectiveTimer = info.currentUserId && autoUsers.includes(info.currentUserId) ? 10 : baseTimer;
 
   return NextResponse.json({
@@ -113,21 +131,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id } = await params;
   const { riderId } = await req.json();
-  const db = getDb();
 
-  const member = db.prepare("SELECT id FROM league_members WHERE league_id = ? AND user_id = ?").get(id, user.id);
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
   if (!member) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
-  const league = db.prepare("SELECT * FROM leagues WHERE id = ?").get(id) as League;
+  const { data: league } = await supabase
+    .from("leagues")
+    .select("*")
+    .eq("id", id)
+    .single();
 
   if (league.draft_status !== "drafting") {
     return NextResponse.json({ error: "Draft is not active" }, { status: 400 });
   }
 
-  const pickCount = (db.prepare("SELECT COUNT(*) as cnt FROM draft_picks WHERE league_id = ?").get(id) as { cnt: number }).cnt;
-  const info = getSnakeDraftInfo(league, pickCount);
+  const { count: pickCount } = await supabase
+    .from("draft_picks")
+    .select("*", { count: "exact", head: true })
+    .eq("league_id", id);
+
+  const info = getSnakeDraftInfo(league as League, pickCount || 0);
 
   if (info.completed) {
     return NextResponse.json({ error: "Draft is complete" }, { status: 400 });
@@ -138,41 +168,52 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   // Check rider exists and isn't already drafted
-  const rider = db.prepare("SELECT id FROM riders WHERE id = ?").get(riderId);
+  const { data: rider } = await supabase
+    .from("riders")
+    .select("id")
+    .eq("id", riderId)
+    .maybeSingle();
   if (!rider) {
     return NextResponse.json({ error: "Rider not found" }, { status: 404 });
   }
 
-  const alreadyDrafted = db.prepare("SELECT id FROM draft_picks WHERE league_id = ? AND rider_id = ?").get(id, riderId);
+  const { data: alreadyDrafted } = await supabase
+    .from("draft_picks")
+    .select("id")
+    .eq("league_id", id)
+    .eq("rider_id", riderId)
+    .maybeSingle();
   if (alreadyDrafted) {
     return NextResponse.json({ error: "Rider already drafted" }, { status: 400 });
   }
 
   // Make the pick
-  db.prepare(
-    "INSERT INTO draft_picks (league_id, pick_number, round, user_id, rider_id) VALUES (?, ?, ?, ?, ?)"
-  ).run(id, info.pickNumber, info.round, user.id, riderId);
+  await supabase.from("draft_picks").insert({
+    league_id: Number(id), pick_number: info.pickNumber, round: info.round,
+    user_id: user.id, rider_id: riderId,
+  });
 
-  // Also add to league_rosters
-  db.prepare(
-    "INSERT OR IGNORE INTO league_rosters (league_id, user_id, rider_id) VALUES (?, ?, ?)"
-  ).run(id, user.id, riderId);
+  // Also add to league_rosters (ignore if already exists)
+  await supabase.from("league_rosters").upsert(
+    { league_id: Number(id), user_id: user.id, rider_id: riderId },
+    { onConflict: "league_id,user_id,rider_id", ignoreDuplicates: true }
+  );
 
   // Remove user from auto-pick list (they manually picked)
-  const currentAutoUsers: number[] = JSON.parse(league.draft_auto_users || "[]");
+  const currentAutoUsers: number[] = (league as League).draft_auto_users || [];
   if (currentAutoUsers.includes(user.id)) {
     const updated = currentAutoUsers.filter((uid) => uid !== user.id);
-    db.prepare("UPDATE leagues SET draft_auto_users = ? WHERE id = ?").run(JSON.stringify(updated), id);
+    await supabase.from("leagues").update({ draft_auto_users: updated }).eq("id", id);
   }
 
   // Reset pick timer
-  db.prepare("UPDATE leagues SET last_pick_at = datetime('now') WHERE id = ?").run(id);
+  await supabase.from("leagues").update({ last_pick_at: new Date().toISOString() }).eq("id", id);
 
   // Check if draft is now complete
-  const newPickCount = pickCount + 1;
-  const newInfo = getSnakeDraftInfo(league, newPickCount);
+  const newPickCount = (pickCount || 0) + 1;
+  const newInfo = getSnakeDraftInfo(league as League, newPickCount);
   if (newInfo.completed) {
-    db.prepare("UPDATE leagues SET draft_status = 'completed' WHERE id = ?").run(id);
+    await supabase.from("leagues").update({ draft_status: "completed" }).eq("id", id);
   }
 
   return NextResponse.json({ success: true, completed: newInfo.completed });
@@ -186,14 +227,22 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
   }
 
   const { id } = await params;
-  const db = getDb();
 
-  const member = db.prepare("SELECT id FROM league_members WHERE league_id = ? AND user_id = ?").get(id, user.id);
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("id")
+    .eq("league_id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
   if (!member) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
-  const league = db.prepare("SELECT * FROM leagues WHERE id = ?").get(id) as League;
+  const { data: league } = await supabase
+    .from("leagues")
+    .select("*")
+    .eq("id", id)
+    .single();
 
   if (league.draft_status !== "drafting") {
     return NextResponse.json({ error: "Draft is not active" }, { status: 400 });
@@ -201,7 +250,7 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
 
   // Verify timer has actually expired server-side
   if (league.last_pick_at && league.draft_pick_timer) {
-    const started = new Date(league.last_pick_at + "Z").getTime();
+    const started = new Date(league.last_pick_at).getTime();
     const now = Date.now();
     const elapsed = Math.floor((now - started) / 1000);
     if (elapsed < league.draft_pick_timer) {
@@ -209,20 +258,30 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
     }
   }
 
-  const pickCount = (db.prepare("SELECT COUNT(*) as cnt FROM draft_picks WHERE league_id = ?").get(id) as { cnt: number }).cnt;
-  const info = getSnakeDraftInfo(league, pickCount);
+  const { count: pickCount } = await supabase
+    .from("draft_picks")
+    .select("*", { count: "exact", head: true })
+    .eq("league_id", id);
+
+  const info = getSnakeDraftInfo(league as League, pickCount || 0);
 
   if (info.completed) {
     return NextResponse.json({ error: "Draft is complete" }, { status: 400 });
   }
 
   // Find the top available rider (first rider not yet drafted, ordered by id)
-  const topRider = db.prepare(`
-    SELECT r.id FROM riders r
-    WHERE r.id NOT IN (SELECT rider_id FROM draft_picks WHERE league_id = ?)
-    ORDER BY r.id ASC
-    LIMIT 1
-  `).get(id) as { id: number } | undefined;
+  const { data: draftedPicks } = await supabase
+    .from("draft_picks")
+    .select("rider_id")
+    .eq("league_id", id);
+
+  const draftedIds = (draftedPicks || []).map((p) => p.rider_id);
+
+  let riderQuery = supabase.from("riders").select("id").order("id").limit(1);
+  if (draftedIds.length > 0) {
+    riderQuery = riderQuery.not("id", "in", `(${draftedIds.join(",")})`);
+  }
+  const { data: topRider } = await riderQuery.maybeSingle();
 
   if (!topRider) {
     return NextResponse.json({ error: "No riders available" }, { status: 400 });
@@ -231,29 +290,31 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
   const currentUserId = info.currentUserId!;
 
   // Make the auto-pick
-  db.prepare(
-    "INSERT INTO draft_picks (league_id, pick_number, round, user_id, rider_id) VALUES (?, ?, ?, ?, ?)"
-  ).run(id, info.pickNumber, info.round, currentUserId, topRider.id);
+  await supabase.from("draft_picks").insert({
+    league_id: Number(id), pick_number: info.pickNumber, round: info.round,
+    user_id: currentUserId, rider_id: topRider.id,
+  });
 
-  db.prepare(
-    "INSERT OR IGNORE INTO league_rosters (league_id, user_id, rider_id) VALUES (?, ?, ?)"
-  ).run(id, currentUserId, topRider.id);
+  await supabase.from("league_rosters").upsert(
+    { league_id: Number(id), user_id: currentUserId, rider_id: topRider.id },
+    { onConflict: "league_id,user_id,rider_id", ignoreDuplicates: true }
+  );
 
   // Add user to auto-pick list (10s timer until they manually pick)
-  const currentAutoUsers: number[] = JSON.parse(league.draft_auto_users || "[]");
+  const currentAutoUsers: number[] = (league as League).draft_auto_users || [];
   if (!currentAutoUsers.includes(currentUserId)) {
     currentAutoUsers.push(currentUserId);
-    db.prepare("UPDATE leagues SET draft_auto_users = ? WHERE id = ?").run(JSON.stringify(currentAutoUsers), id);
+    await supabase.from("leagues").update({ draft_auto_users: currentAutoUsers }).eq("id", id);
   }
 
   // Reset pick timer
-  db.prepare("UPDATE leagues SET last_pick_at = datetime('now') WHERE id = ?").run(id);
+  await supabase.from("leagues").update({ last_pick_at: new Date().toISOString() }).eq("id", id);
 
   // Check if draft is now complete
-  const newPickCount = pickCount + 1;
-  const newInfo = getSnakeDraftInfo(league, newPickCount);
+  const newPickCount = (pickCount || 0) + 1;
+  const newInfo = getSnakeDraftInfo(league as League, newPickCount);
   if (newInfo.completed) {
-    db.prepare("UPDATE leagues SET draft_status = 'completed' WHERE id = ?").run(id);
+    await supabase.from("leagues").update({ draft_status: "completed" }).eq("id", id);
   }
 
   return NextResponse.json({ success: true, auto_pick: true, completed: newInfo.completed });
