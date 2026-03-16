@@ -56,12 +56,16 @@ export async function POST(req: NextRequest) {
       .from("users")
       .select("*", { count: "exact", head: true });
     const isAdmin = count === 0 ? 1 : 0;
-    const { data: newUser } = await supabase
+    const { data: newUser, error: insertError } = await supabase
       .from("users")
       .insert({ username, password_hash: hash, is_admin: isAdmin })
       .select("id")
       .single();
-    await createSession(newUser!.id);
+    if (insertError || !newUser) {
+      console.error("Registration insert error:", insertError);
+      return NextResponse.json({ error: insertError?.message || "Failed to create account" }, { status: 500 });
+    }
+    await createSession(newUser.id);
     return NextResponse.json({ success: true, isAdmin: isAdmin === 1 });
   }
 

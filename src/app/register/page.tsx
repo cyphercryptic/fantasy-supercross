@@ -17,14 +17,20 @@ export default function RegisterPage() {
       setError("Password must be at least 4 characters");
       return;
     }
-    const res = await fetch("/api/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "register", username, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error);
+    let data;
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "register", username, password }),
+      });
+      data = await res.json();
+      if (!res.ok) {
+        setError(data.error || `Registration failed (${res.status})`);
+        return;
+      }
+    } catch (err) {
+      setError("Network error — please try again");
       return;
     }
     if (data.isAdmin) {
