@@ -1,26 +1,29 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  pointer-events: none;
+  /* 5 stripes clustered on the right */
+  background-image:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent calc(82% - 1.5px), #1d4ed8b3 calc(82% - 1.5px), #1d4ed8b3 calc(82% + 1.5px), transparent calc(82% + 1.5px),
+      transparent calc(84% - 1.5px), #f97316b3 calc(84% - 1.5px), #f97316b3 calc(84% + 1.5px), transparent calc(84% + 1.5px),
+      transparent calc(86% - 1.5px), #facc15b3 calc(86% - 1.5px), #facc15b3 calc(86% + 1.5px), transparent calc(86% + 1.5px),
+      transparent calc(88% - 1.5px), #16a34ab3 calc(88% - 1.5px), #16a34ab3 calc(88% + 1.5px), transparent calc(88% + 1.5px),
+      transparent calc(90% - 1.5px), #dc2626b3 calc(90% - 1.5px), #dc2626b3 calc(90% + 1.5px), transparent calc(90% + 1.5px),
+      transparent 100%
+    );
 }
