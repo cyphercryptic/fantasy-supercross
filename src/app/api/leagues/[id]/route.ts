@@ -32,13 +32,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const { data: rawMembers } = await supabase
     .from("league_members")
-    .select("joined_at, users(id, username)")
+    .select("joined_at, app_users(id, username)")
     .eq("league_id", id)
     .order("joined_at", { ascending: true });
 
   const members = (rawMembers || []).map((m) => ({
-    id: (m.users as unknown as unknown as Record<string, unknown>).id,
-    username: (m.users as unknown as unknown as Record<string, unknown>).username,
+    id: (m.app_users as unknown as unknown as Record<string, unknown>).id,
+    username: (m.app_users as unknown as unknown as Record<string, unknown>).username,
     joined_at: m.joined_at,
   }));
 

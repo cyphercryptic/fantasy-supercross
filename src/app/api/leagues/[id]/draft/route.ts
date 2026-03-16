@@ -66,13 +66,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // Get all picks so far
   const { data: rawPicks } = await supabase
     .from("draft_picks")
-    .select("pick_number, round, user_id, rider_id, riders(name, number, team, class), users(username)")
+    .select("pick_number, round, user_id, rider_id, riders(name, number, team, class), app_users(username)")
     .eq("league_id", id)
     .order("pick_number", { ascending: true });
 
   const picks = (rawPicks || []).map((p) => {
     const rider = p.riders as unknown as Record<string, unknown> | null;
-    const usr = p.users as unknown as Record<string, unknown> | null;
+    const usr = p.app_users as unknown as Record<string, unknown> | null;
     return {
       pick_number: p.pick_number, round: p.round, user_id: p.user_id, rider_id: p.rider_id,
       rider_name: rider?.name, rider_number: rider?.number, team: rider?.team, class: rider?.class,
@@ -86,12 +86,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // Get all members with usernames and team logos
   const { data: rawMembers } = await supabase
     .from("league_members")
-    .select("user_id, team_name, team_logo, users(id, username)")
+    .select("user_id, team_name, team_logo, app_users(id, username)")
     .eq("league_id", id);
 
   const members = (rawMembers || []).map((m) => ({
-    id: (m.users as unknown as unknown as Record<string, unknown>).id,
-    username: (m.users as unknown as unknown as Record<string, unknown>).username,
+    id: (m.app_users as unknown as unknown as Record<string, unknown>).id,
+    username: (m.app_users as unknown as unknown as Record<string, unknown>).username,
     team_name: m.team_name,
     team_logo: m.team_logo,
   }));

@@ -46,7 +46,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // Recent transactions
   const { data: rawTxns } = await supabase
     .from("transactions")
-    .select("*, users(username)")
+    .select("*, app_users(username)")
     .eq("league_id", id)
     .order("created_at", { ascending: false })
     .limit(20);
@@ -72,7 +72,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       id: t.id, league_id: t.league_id, user_id: t.user_id, type: t.type,
       added_rider_id: t.added_rider_id, dropped_rider_id: t.dropped_rider_id,
       created_at: t.created_at,
-      username: (t.users as unknown as unknown as Record<string, unknown>)?.username,
+      username: (t.app_users as unknown as unknown as Record<string, unknown>)?.username,
       added_rider_name: added?.name, added_rider_number: added?.number, added_rider_class: added?.class,
       dropped_rider_name: dropped?.name, dropped_rider_number: dropped?.number, dropped_rider_class: dropped?.class,
     };

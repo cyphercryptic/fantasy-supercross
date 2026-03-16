@@ -24,7 +24,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // Get all league members
   const { data: rawMembers } = await supabase
     .from("league_members")
-    .select("user_id, team_name, users(id, username)")
+    .select("user_id, team_name, app_users(id, username)")
     .eq("league_id", id);
 
   // Get all lineups for this league
@@ -97,8 +97,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     return {
-      id: (m.users as unknown as unknown as Record<string, unknown>).id,
-      username: (m.users as unknown as unknown as Record<string, unknown>).username,
+      id: (m.app_users as unknown as unknown as Record<string, unknown>).id,
+      username: (m.app_users as unknown as unknown as Record<string, unknown>).username,
       team_name: m.team_name,
       total_points: totalPoints,
       races_played: playedRaces.size,
