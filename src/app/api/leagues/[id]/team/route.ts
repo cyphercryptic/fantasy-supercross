@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/leagues/[id]/team — get team info + starting lineup for upcoming race
 // Optional ?userId=X to view another user's roster (read-only)
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

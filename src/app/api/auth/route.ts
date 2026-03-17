@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 import { supabase } from "@/lib/supabase";
 import { createSession, destroySession, getCurrentUser } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // POST /api/auth — login, register, logout, or change_password
 export async function POST(req: NextRequest) {
   const body = await req.json();

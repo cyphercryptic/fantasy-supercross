@@ -3,6 +3,8 @@ import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import { getPointsForPosition } from "@/lib/scoring";
 
+export const dynamic = "force-dynamic";
+
 interface ParsedRace {
   name: string;
   url: string;

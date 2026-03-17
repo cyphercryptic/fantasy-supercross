@@ -4,6 +4,8 @@ import { getCurrentUser } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 
+export const dynamic = "force-dynamic";
+
 const MAX_LEAGUES = 5;
 
 // GET /api/leagues — list current user's leagues

@@ -3,6 +3,8 @@ import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import { getPointsForPosition } from "@/lib/scoring";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/races — list races, optionally with results
 export async function GET(req: NextRequest) {
   const raceId = req.nextUrl.searchParams.get("id");
