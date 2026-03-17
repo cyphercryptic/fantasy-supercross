@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 relative overflow-hidden" style={{ outline: "2px solid rgba(139, 35, 35, 0.45)" }}>
+    <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 relative overflow-hidden" style={{ outline: "3px solid rgba(139, 35, 35, 0.80)" }}>
       <div className="text-center max-w-2xl relative z-10">
         <h1 className="text-5xl md:text-7xl font-extrabold mb-4 tracking-tight">
           <span className="text-[#1A1A1A]">Fantasy</span>{" "}
