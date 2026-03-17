@@ -19,14 +19,14 @@ export default function Home() {
               color: "transparent",
               WebkitTextFillColor: "transparent",
               textShadow: `
-                -2px -2px 0 rgba(139, 35, 35, 0.06),
-                 2px -2px 0 rgba(139, 35, 35, 0.06),
-                -2px  2px 0 rgba(139, 35, 35, 0.06),
-                 2px  2px 0 rgba(139, 35, 35, 0.06),
-                 0px -2px 0 rgba(139, 35, 35, 0.06),
-                 0px  2px 0 rgba(139, 35, 35, 0.06),
-                -2px  0px 0 rgba(139, 35, 35, 0.06),
-                 2px  0px 0 rgba(139, 35, 35, 0.06)
+                -2px -2px 0 rgba(139, 35, 35, 0.03),
+                 2px -2px 0 rgba(139, 35, 35, 0.03),
+                -2px  2px 0 rgba(139, 35, 35, 0.03),
+                 2px  2px 0 rgba(139, 35, 35, 0.03),
+                 0px -2px 0 rgba(139, 35, 35, 0.03),
+                 0px  2px 0 rgba(139, 35, 35, 0.03),
+                -2px  0px 0 rgba(139, 35, 35, 0.03),
+                 2px  0px 0 rgba(139, 35, 35, 0.03)
               `,
             }}
             aria-hidden="true"
