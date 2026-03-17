@@ -2,27 +2,22 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 relative overflow-hidden" style={{ outline: "1px solid rgba(249, 115, 22, 0.07)" }}>
-      {/* Background watermark — anchored so bottom aligns with subtitle */}
-      <div
-        className="absolute inset-0 flex items-center justify-center pointer-events-none select-none"
-        aria-hidden="true"
-        style={{ transform: "translateY(-12%)" }}
-      >
-        <span
-          className="font-black tracking-tighter text-[#1A1A1A] opacity-[0.03] leading-none whitespace-nowrap"
-          style={{ fontSize: "clamp(14rem, 30vw, 35rem)" }}
-        >
-          Bar9
-        </span>
-      </div>
+    <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 relative overflow-hidden" style={{ outline: "1px solid rgba(139, 35, 35, 0.17)" }}>
       <div className="text-center max-w-2xl relative z-10">
         <h1 className="text-5xl md:text-7xl font-extrabold mb-4 tracking-tight">
           <span className="text-[#1A1A1A]">Fantasy</span>{" "}
           <span className="text-[#8A8A8A]">Supercross</span>
         </h1>
-        <p className="text-[#6B6B6B] text-lg md:text-xl mb-10 leading-relaxed">
+        <p className="text-[#6B6B6B] text-lg md:text-xl mb-10 leading-relaxed relative">
           Draft your riders. Score points from real race results. Compete against friends.
+          {/* Bar9 watermark — top aligned with bottom of this text */}
+          <span
+            className="absolute left-1/2 top-full -translate-x-1/2 font-black tracking-tighter text-[#1A1A1A] opacity-[0.03] leading-none whitespace-nowrap pointer-events-none select-none"
+            style={{ fontSize: "clamp(14rem, 30vw, 35rem)" }}
+            aria-hidden="true"
+          >
+            Bar9
+          </span>
         </p>
         <div className="flex gap-4 justify-center">
           <Link
