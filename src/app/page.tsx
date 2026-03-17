@@ -1,13 +1,30 @@
 import Link from "next/link";
 
+function NumberPlate({ number }: { number: string }) {
+  return (
+    <div className="flex-shrink-0 w-[70px] h-[80px] md:w-[100px] md:h-[115px] rounded-t-xl rounded-b-lg border-[3px] border-[#1A1A1A] bg-white shadow-md overflow-hidden flex flex-col">
+      <div className="h-[6px] md:h-[8px] bg-red-600 flex-shrink-0" />
+      <div className="flex-1 flex items-center justify-center">
+        <span className="text-[#1A1A1A] text-3xl md:text-5xl font-extrabold leading-none tracking-tight">
+          {number}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   return (
     <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 relative overflow-hidden" style={{}}>
       <div className="text-center max-w-2xl relative z-10">
-        <h1 className="text-5xl md:text-7xl font-extrabold mb-4 tracking-tight">
-          <span className="text-[#1A1A1A]">Fantasy</span>{" "}
-          <span className="text-[#8A8A8A]">Supercross</span>
-        </h1>
+        <div className="flex items-center gap-4 md:gap-6 justify-center mb-4">
+          <NumberPlate number="75" />
+          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight">
+            <span className="text-[#1A1A1A]">Fantasy</span>{" "}
+            <span className="text-[#8A8A8A]">Supercross</span>
+          </h1>
+          <NumberPlate number="99" />
+        </div>
         <p className="text-[#6B6B6B] text-lg md:text-xl mb-10 leading-relaxed relative">
           Draft your riders. Score points from real race results. Compete against friends.
           {/* Bar9 watermark — top aligned with bottom of this text, spans buttons + cards */}
