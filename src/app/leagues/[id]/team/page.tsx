@@ -59,6 +59,7 @@ interface TeamData {
   lineup: Rider[];
   roster: Rider[];
   members: LeagueMember[];
+  my_user_id: number;
   viewing_user_id: number;
   is_own_team: boolean;
 }
@@ -661,12 +662,14 @@ export default function TeamPage() {
           <div className="flex-1">
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-[#1A1A1A] tracking-tight">{displayName}</h1>
-              <button
-                onClick={() => { setEditing(true); setShowBikeEditor(true); }}
-                className="text-[#A0A0A0] hover:text-[#1A1A1A] text-sm transition-colors"
-              >
-                Edit
-              </button>
+              {!viewingUserId && (
+                <button
+                  onClick={() => { setEditing(true); setShowBikeEditor(true); }}
+                  className="text-[#A0A0A0] hover:text-[#1A1A1A] text-sm transition-colors"
+                >
+                  Edit
+                </button>
+              )}
             </div>
             <p className="text-[#8A8A8A] text-sm mt-1">{data.league.name}</p>
           </div>
@@ -803,11 +806,13 @@ export default function TeamPage() {
                     className="bg-[#EBE7E2] border border-[#D4D0CB] rounded-lg px-3 py-2 text-[#1A1A1A] text-sm font-medium"
                   >
                     <option value="">My Team</option>
-                    {(data.members || []).map((m) => (
-                      <option key={m.user_id} value={m.user_id}>
-                        {m.team_name || m.username}
-                      </option>
-                    ))}
+                    {(data.members || [])
+                      .filter((m) => m.user_id !== data.my_user_id)
+                      .map((m) => (
+                        <option key={m.user_id} value={m.user_id}>
+                          {m.team_name || m.username}
+                        </option>
+                      ))}
                   </select>
                 </div>
                 {!viewingUserId && (

@@ -97,6 +97,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     lineup,
     roster,
     members,
+    my_user_id: user.id,
     viewing_user_id: targetUserId,
     is_own_team: !isViewingOther,
   });
