@@ -12,8 +12,8 @@ export default function Home() {
           Draft your riders. Score points from real race results. Compete against friends.
           {/* Bar9 watermark — top aligned with bottom of this text, spans buttons + cards */}
           <span
-            className="absolute left-1/2 -translate-x-1/2 font-black tracking-tighter opacity-[0.03] leading-none whitespace-nowrap pointer-events-none select-none"
-            style={{ fontSize: "clamp(16rem, 49vw, 49rem)", top: "-120%", WebkitTextStroke: "3px rgba(139, 35, 35, 0.80)", color: "#1A1A1A" }}
+            className="absolute left-1/2 -translate-x-1/2 font-black tracking-tighter leading-none whitespace-nowrap pointer-events-none select-none"
+            style={{ fontSize: "clamp(16rem, 49vw, 49rem)", top: "-120%", WebkitTextStroke: "3px rgba(139, 35, 35, 0.06)", color: "rgba(26, 26, 26, 0.03)" }}
             aria-hidden="true"
           >
             Bar9
