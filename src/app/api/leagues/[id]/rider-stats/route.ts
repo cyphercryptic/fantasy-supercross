@@ -34,10 +34,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const riderIds = rosterEntries.map((r) => r.rider_id);
 
-  // Get all race results for these riders
+  // Get all race results for these riders (include race name)
   const { data: allResults } = await supabase
     .from("race_results")
-    .select("rider_id, position, points, races(round_number)")
+    .select("rider_id, position, points, races(round_number, name)")
     .in("rider_id", riderIds)
     .order("rider_id");
 
@@ -53,7 +53,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     totalPositionPoints: number;
     totalBonus: number;
     positionSum: number;
-    recent: { round: number; position: number; points: number }[];
+    recent: { round: number; raceName: string; position: number; points: number }[];
   }>();
 
   for (const riderId of riderIds) {
@@ -81,11 +81,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       const bRound = (b.races as unknown as unknown as Record<string, unknown>)?.round_number as number || 0;
       return bRound - aRound;
     });
-    stat.recent = sorted.slice(0, 3).map((r) => ({
-      round: (r.races as unknown as unknown as Record<string, unknown>)?.round_number as number || 0,
-      position: r.position,
-      points: r.points,
-    }));
+    stat.recent = sorted.map((r) => {
+      const race = r.races as unknown as Record<string, unknown>;
+      return {
+        round: (race?.round_number as number) || 0,
+        raceName: (race?.name as string) || "",
+        position: r.position,
+        points: r.points,
+      };
+    });
   }
 
   // Process bonuses
@@ -100,7 +104,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     totalPoints: number;
     totalBonus: number;
     racesRaced: number;
-    recent: { round: number; position: number; points: number }[];
+    recent: { round: number; raceName: string; position: number; points: number }[];
   }> = {};
 
   for (const [riderId, stat] of statsMap) {
