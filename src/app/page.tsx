@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 relative overflow-hidden" style={{ outline: "1px solid rgba(139, 35, 35, 0.17)" }}>
+    <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 relative overflow-hidden" style={{ outline: "2px solid rgba(139, 35, 35, 0.45)" }}>
       <div className="text-center max-w-2xl relative z-10">
         <h1 className="text-5xl md:text-7xl font-extrabold mb-4 tracking-tight">
           <span className="text-[#1A1A1A]">Fantasy</span>{" "}
@@ -13,7 +13,7 @@ export default function Home() {
           {/* Bar9 watermark — top aligned with bottom of this text, spans buttons + cards */}
           <span
             className="absolute left-1/2 -translate-x-1/2 font-black tracking-tighter text-[#1A1A1A] opacity-[0.03] leading-none whitespace-nowrap pointer-events-none select-none"
-            style={{ fontSize: "clamp(17rem, 52vw, 52rem)", top: "-60%" }}
+            style={{ fontSize: "clamp(16rem, 49vw, 49rem)", top: "-120%" }}
             aria-hidden="true"
           >
             Bar9
