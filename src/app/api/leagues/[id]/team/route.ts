@@ -3,7 +3,8 @@ import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 
 // GET /api/leagues/[id]/team — get team info + starting lineup for upcoming race
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// Optional ?userId=X to view another user's roster (read-only)
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Login required" }, { status: 401 });
@@ -11,15 +12,32 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id } = await params;
 
-  const { data: member } = await supabase
+  // Verify the requesting user is a league member
+  const { data: selfMember } = await supabase
     .from("league_members")
-    .select("team_name, team_logo")
+    .select("id")
     .eq("league_id", id)
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!member) {
+  if (!selfMember) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
+  }
+
+  // Determine which user's team to view
+  const viewUserId = req.nextUrl.searchParams.get("userId");
+  const targetUserId = viewUserId ? parseInt(viewUserId) : user.id;
+  const isViewingOther = targetUserId !== user.id;
+
+  const { data: member } = await supabase
+    .from("league_members")
+    .select("team_name, team_logo")
+    .eq("league_id", id)
+    .eq("user_id", targetUserId)
+    .maybeSingle();
+
+  if (!member) {
+    return NextResponse.json({ error: "User not found in league" }, { status: 404 });
   }
 
   const { data: league } = await supabase
@@ -27,6 +45,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     .select("id, name, lineup_450, lineup_250e, lineup_250w, draft_status")
     .eq("id", id)
     .single();
+
+  // Get all league members for the selector dropdown
+  const { data: allMembers } = await supabase
+    .from("league_members")
+    .select("user_id, team_name, app_users(username)")
+    .eq("league_id", id);
+
+  const members = (allMembers || []).map((m) => ({
+    user_id: (m as Record<string, unknown>).user_id as number,
+    team_name: (m as Record<string, unknown>).team_name as string | null,
+    username: ((m as Record<string, unknown>).app_users as Record<string, unknown>)?.username as string || "Unknown",
+  }));
 
   // Get upcoming race
   const { data: upcomingRace } = await supabase
@@ -44,7 +74,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       .from("weekly_lineups")
       .select("riders(id, name, number, team, class)")
       .eq("league_id", id)
-      .eq("user_id", user.id)
+      .eq("user_id", targetUserId)
       .eq("race_id", upcomingRace.id);
 
     lineup = (lineupEntries || []).map((e) => e.riders as unknown as unknown as Record<string, unknown>);
@@ -55,7 +85,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     .from("league_rosters")
     .select("riders(id, name, number, team, class)")
     .eq("league_id", id)
-    .eq("user_id", user.id);
+    .eq("user_id", targetUserId);
 
   const roster = (rosterEntries || []).map((e) => e.riders as unknown as unknown as Record<string, unknown>);
 
@@ -66,6 +96,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     upcoming_race: upcomingRace || null,
     lineup,
     roster,
+    members,
+    viewing_user_id: targetUserId,
+    is_own_team: !isViewingOther,
   });
 }
 

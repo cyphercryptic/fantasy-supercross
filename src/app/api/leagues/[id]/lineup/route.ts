@@ -26,11 +26,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "raceId required" }, { status: 400 });
   }
 
+  // Allow viewing another user's lineup (read-only)
+  const viewUserId = req.nextUrl.searchParams.get("userId");
+  const targetUserId = viewUserId ? parseInt(viewUserId) : user.id;
+
   const { data: entries } = await supabase
     .from("weekly_lineups")
     .select("riders(*)")
     .eq("league_id", id)
-    .eq("user_id", user.id)
+    .eq("user_id", targetUserId)
     .eq("race_id", raceId);
 
   const lineup = (entries || []).map((e) => e.riders);

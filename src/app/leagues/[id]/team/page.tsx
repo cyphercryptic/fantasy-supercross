@@ -45,6 +45,12 @@ interface Transaction {
   created_at: string;
 }
 
+interface LeagueMember {
+  user_id: number;
+  team_name: string | null;
+  username: string;
+}
+
 interface TeamData {
   team_name: string | null;
   team_logo: string | null;
@@ -52,6 +58,9 @@ interface TeamData {
   upcoming_race: Race | null;
   lineup: Rider[];
   roster: Rider[];
+  members: LeagueMember[];
+  viewing_user_id: number;
+  is_own_team: boolean;
 }
 
 interface FreeAgentData {
@@ -477,6 +486,9 @@ export default function TeamPage() {
   const [lineupRiderIds, setLineupRiderIds] = useState<Set<number>>(new Set());
   const [stats, setStats] = useState<Record<number, RiderStats>>({});
 
+  // View other teams
+  const [viewingUserId, setViewingUserId] = useState<number | null>(null);
+
   // Modals
   const [showLineupModal, setShowLineupModal] = useState(false);
   const [selectedRiderForStats, setSelectedRiderForStats] = useState<Rider | null>(null);
@@ -494,21 +506,24 @@ export default function TeamPage() {
   const leagueId = id as string;
 
   // Load team data
-  const loadTeamData = useCallback(() => {
-    fetch(`/api/leagues/${leagueId}/team`)
+  const loadTeamData = useCallback((userId?: number | null) => {
+    const url = userId ? `/api/leagues/${leagueId}/team?userId=${userId}` : `/api/leagues/${leagueId}/team`;
+    fetch(url)
       .then((r) => r.json())
       .then((d) => {
         setData(d);
-        setTeamName(d.team_name || "");
-        const bike = parseBikeConfig(d.team_logo);
-        if (bike) {
-          setBikeBrand(bike.brand);
-          setBikeNumber(bike.number);
+        if (!userId) {
+          setTeamName(d.team_name || "");
+          const bike = parseBikeConfig(d.team_logo);
+          if (bike) {
+            setBikeBrand(bike.brand);
+            setBikeNumber(bike.number);
+          }
         }
       });
   }, [leagueId]);
 
-  useEffect(() => { loadTeamData(); }, [loadTeamData]);
+  useEffect(() => { loadTeamData(viewingUserId); }, [loadTeamData, viewingUserId]);
 
   // Load races and stats
   useEffect(() => {
@@ -517,7 +532,10 @@ export default function TeamPage() {
       // Load lineup for upcoming race to determine starters
       const upcoming = raceData.find((r) => r.status === "upcoming");
       if (upcoming) {
-        fetch(`/api/leagues/${leagueId}/lineup?raceId=${upcoming.id}`)
+        const lineupUrl = viewingUserId
+          ? `/api/leagues/${leagueId}/lineup?raceId=${upcoming.id}&userId=${viewingUserId}`
+          : `/api/leagues/${leagueId}/lineup?raceId=${upcoming.id}`;
+        fetch(lineupUrl)
           .then((r) => r.json())
           .then((lineup: Rider[]) => {
             if (Array.isArray(lineup)) {
@@ -527,7 +545,7 @@ export default function TeamPage() {
       }
     });
     fetch(`/api/leagues/${leagueId}/rider-stats`).then((r) => r.json()).then(setStats);
-  }, [leagueId]);
+  }, [leagueId, viewingUserId]);
 
   // Load free agent data
   const loadFaData = useCallback(() => {
@@ -595,7 +613,7 @@ export default function TeamPage() {
     setSelectedDrop(null);
     setFaMessage("Transaction complete!");
     loadFaData();
-    loadTeamData();
+    loadTeamData(viewingUserId);
     setTimeout(() => setFaMessage(""), 3000);
   }
 
@@ -772,17 +790,37 @@ export default function TeamPage() {
           {/* ===== ROSTER TAB ===== */}
           {tab === "roster" && (
             <>
-              {/* Edit Lineup Button */}
-              <div className="flex justify-end mb-4">
-                <button
-                  onClick={() => setShowLineupModal(true)}
-                  className="bg-[#1A1A1A] hover:bg-[#333333] text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                  Edit Lineup
-                </button>
+              {/* View Team Selector + Edit Lineup */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-[#8A8A8A] uppercase tracking-wide">Viewing:</label>
+                  <select
+                    value={viewingUserId ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setViewingUserId(val ? parseInt(val) : null);
+                    }}
+                    className="bg-[#EBE7E2] border border-[#D4D0CB] rounded-lg px-3 py-2 text-[#1A1A1A] text-sm font-medium"
+                  >
+                    <option value="">My Team</option>
+                    {(data.members || []).map((m) => (
+                      <option key={m.user_id} value={m.user_id}>
+                        {m.team_name || m.username}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {!viewingUserId && (
+                  <button
+                    onClick={() => setShowLineupModal(true)}
+                    className="bg-[#1A1A1A] hover:bg-[#333333] text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Edit Lineup
+                  </button>
+                )}
               </div>
 
               {data.roster.length === 0 ? (

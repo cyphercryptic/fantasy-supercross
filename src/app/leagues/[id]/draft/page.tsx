@@ -57,6 +57,7 @@ export default function DraftPage() {
   const [allRiders, setAllRiders] = useState<Rider[]>([]);
   const [filter, setFilter] = useState("");
   const [classFilter, setClassFilter] = useState("all");
+  const [viewingRosterId, setViewingRosterId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [picking, setPicking] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
@@ -322,34 +323,56 @@ export default function DraftPage() {
         {/* My Roster — shows below riders on mobile, left sidebar on desktop */}
         <div className="lg:col-span-1 order-2 lg:order-1 space-y-4">
           <div className="bg-[#F5F0EB] border border-[#D4D0CB] rounded-xl p-4">
-            <h2 className="text-sm font-semibold text-[#8A8A8A] uppercase tracking-wide mb-3">My Roster</h2>
-            {[
-              { key: "450", label: "450 Class" },
-              { key: "250E", label: "250 East" },
-              { key: "250W", label: "250 West" },
-            ].map(({ key, label }) => {
-              const classRiders = (userRosters.get(draft.my_id) || []).filter((p) => p.class === key);
-              return (
-                <div key={key} className="mb-3 last:mb-0">
-                  <p className="text-xs font-semibold text-[#8A8A8A] mb-1">{label}</p>
-                  {classRiders.length === 0 ? (
-                    <p className="text-[#A0A0A0] text-xs italic pl-1">None drafted</p>
-                  ) : (
-                    <div className="space-y-1">
-                      {classRiders.map((pick) => (
-                        <div key={pick.pick_number} className="flex items-center gap-2 bg-[#EBE7E2] rounded px-2 py-1.5">
-                          <TeamLogo team={pick.team} size="sm" />
-                          {pick.rider_number != null && (
-                            <span className="text-[#1A1A1A] font-bold text-xs">#{pick.rider_number}</span>
-                          )}
-                          <span className="text-[#1A1A1A] text-sm">{pick.rider_name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            <div className="flex items-center justify-between mb-3">
+              <select
+                value={viewingRosterId ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setViewingRosterId(val ? parseInt(val) : null);
+                }}
+                className="bg-[#EBE7E2] border border-[#D4D0CB] rounded-lg px-2 py-1.5 text-[#1A1A1A] text-sm font-semibold w-full"
+              >
+                <option value="">My Roster</option>
+                {draft.members
+                  .filter((m) => m.id !== draft.my_id)
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.team_name || m.username}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            {(() => {
+              const rosterUserId = viewingRosterId ?? draft.my_id;
+              const rosterPicks = userRosters.get(rosterUserId) || [];
+              return [
+                { key: "450", label: "450 Class" },
+                { key: "250E", label: "250 East" },
+                { key: "250W", label: "250 West" },
+              ].map(({ key, label }) => {
+                const classRiders = rosterPicks.filter((p) => p.class === key);
+                return (
+                  <div key={key} className="mb-3 last:mb-0">
+                    <p className="text-xs font-semibold text-[#8A8A8A] mb-1">{label}</p>
+                    {classRiders.length === 0 ? (
+                      <p className="text-[#A0A0A0] text-xs italic pl-1">None drafted</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {classRiders.map((pick) => (
+                          <div key={pick.pick_number} className="flex items-center gap-2 bg-[#EBE7E2] rounded px-2 py-1.5">
+                            <TeamLogo team={pick.team} size="sm" />
+                            {pick.rider_number != null && (
+                              <span className="text-[#1A1A1A] font-bold text-xs">#{pick.rider_number}</span>
+                            )}
+                            <span className="text-[#1A1A1A] text-sm">{pick.rider_name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </div>
 
           {/* Recent Picks */}
