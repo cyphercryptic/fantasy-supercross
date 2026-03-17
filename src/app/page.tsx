@@ -1,25 +1,37 @@
 import Link from "next/link";
 
 function NumberPlate({ number, accentColor }: { number: string; accentColor: string }) {
+  // Motocross front plate shape: peaked top corners, concave waist, angular forked bottom
+  const outerPath = `
+    M 18,18 Q 10,4 28,2 L 90,10 Q 100,12 110,10 L 172,2 Q 190,4 182,18
+    Q 200,55 196,95 Q 192,135 172,158
+    L 152,180 L 140,170 L 118,208 L 100,235 L 82,208 L 60,170 L 48,180 L 28,158
+    Q 8,135 4,95 Q 0,55 18,18 Z
+  `;
+  const innerPath = `
+    M 23,22 Q 17,10 32,8 L 90,15 Q 100,17 110,15 L 168,8 Q 183,10 177,22
+    Q 194,55 190,93 Q 186,131 168,153
+    L 150,174 L 140,165 L 119,202 L 100,228 L 81,202 L 60,165 L 50,174 L 32,153
+    Q 14,131 10,93 Q 6,55 23,22 Z
+  `;
   return (
     <div className="flex-shrink-0" style={{ width: "clamp(70px, 12vw, 110px)", aspectRatio: "0.85" }}>
-      <svg viewBox="0 0 200 235" className="w-full h-full drop-shadow-md" xmlns="http://www.w3.org/2000/svg">
-        {/* Plate outline shape — shield/front number plate */}
+      <svg viewBox="0 0 200 240" className="w-full h-full drop-shadow-md" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <clipPath id={`plate-${number}`}>
-            <path d="M 20,2 L 180,2 Q 198,2 198,20 L 198,140 Q 198,170 170,190 L 130,220 Q 110,233 100,235 Q 90,233 70,220 L 30,190 Q 2,170 2,140 L 2,20 Q 2,2 20,2 Z" />
+            <path d={innerPath} />
           </clipPath>
         </defs>
         {/* Black border */}
-        <path d="M 20,2 L 180,2 Q 198,2 198,20 L 198,140 Q 198,170 170,190 L 130,220 Q 110,233 100,235 Q 90,233 70,220 L 30,190 Q 2,170 2,140 L 2,20 Q 2,2 20,2 Z" fill="#1A1A1A" />
+        <path d={outerPath} fill="#1A1A1A" />
         {/* White fill inset */}
-        <path d="M 25,7 L 175,7 Q 193,7 193,22 L 193,138 Q 193,166 166,185 L 128,216 Q 110,228 100,230 Q 90,228 72,216 L 34,185 Q 7,166 7,138 L 7,22 Q 7,7 25,7 Z" fill="white" />
-        {/* Color banner at top (where NAME would be) */}
-        <rect x="7" y="7" width="186" height="55" rx="15" fill={accentColor} clipPath={`url(#plate-${number})`} />
-        {/* Thin separator line below banner */}
-        <line x1="20" y1="65" x2="180" y2="65" stroke="#1A1A1A" strokeWidth="3" />
+        <path d={innerPath} fill="white" />
+        {/* Color banner at top */}
+        <rect x="6" y="6" width="188" height="58" fill={accentColor} clipPath={`url(#plate-${number})`} />
+        {/* Separator line below banner */}
+        <line x1="25" y1="68" x2="175" y2="68" stroke="#1A1A1A" strokeWidth="3" />
         {/* Number */}
-        <text x="100" y="165" textAnchor="middle" dominantBaseline="middle" fill="#1A1A1A" fontFamily="system-ui, -apple-system, sans-serif" fontWeight="800" fontSize="100" letterSpacing="-4">
+        <text x="100" y="135" textAnchor="middle" dominantBaseline="middle" fill="#1A1A1A" fontFamily="system-ui, -apple-system, sans-serif" fontWeight="800" fontSize="95" letterSpacing="-4">
           {number}
         </text>
       </svg>
