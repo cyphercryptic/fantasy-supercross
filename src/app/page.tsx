@@ -10,10 +10,10 @@ export default function Home() {
         </h1>
         <p className="text-[#6B6B6B] text-lg md:text-xl mb-10 leading-relaxed relative">
           Draft your riders. Score points from real race results. Compete against friends.
-          {/* Bar9 watermark — top aligned with bottom of this text */}
+          {/* Bar9 watermark — top aligned with bottom of this text, spans buttons + cards */}
           <span
             className="absolute left-1/2 top-full -translate-x-1/2 font-black tracking-tighter text-[#1A1A1A] opacity-[0.03] leading-none whitespace-nowrap pointer-events-none select-none"
-            style={{ fontSize: "clamp(14rem, 30vw, 35rem)" }}
+            style={{ fontSize: "clamp(18rem, 55vw, 55rem)" }}
             aria-hidden="true"
           >
             Bar9
