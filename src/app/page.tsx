@@ -13,7 +13,22 @@ export default function Home() {
           {/* Bar9 watermark — top aligned with bottom of this text, spans buttons + cards */}
           <span
             className="absolute left-1/2 -translate-x-1/2 font-black tracking-tighter leading-none whitespace-nowrap pointer-events-none select-none"
-            style={{ fontSize: "clamp(16rem, 49vw, 49rem)", top: "-120%", WebkitTextStroke: "3px rgba(139, 35, 35, 0.06)", color: "rgba(26, 26, 26, 0.03)" }}
+            style={{
+              fontSize: "clamp(16rem, 49vw, 49rem)",
+              top: "-120%",
+              color: "transparent",
+              WebkitTextFillColor: "transparent",
+              textShadow: `
+                -2px -2px 0 rgba(139, 35, 35, 0.06),
+                 2px -2px 0 rgba(139, 35, 35, 0.06),
+                -2px  2px 0 rgba(139, 35, 35, 0.06),
+                 2px  2px 0 rgba(139, 35, 35, 0.06),
+                 0px -2px 0 rgba(139, 35, 35, 0.06),
+                 0px  2px 0 rgba(139, 35, 35, 0.06),
+                -2px  0px 0 rgba(139, 35, 35, 0.06),
+                 2px  0px 0 rgba(139, 35, 35, 0.06)
+              `,
+            }}
             aria-hidden="true"
           >
             Bar9
