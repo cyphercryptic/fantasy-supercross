@@ -1,14 +1,28 @@
 import Link from "next/link";
 
-function NumberPlate({ number }: { number: string }) {
+function NumberPlate({ number, accentColor }: { number: string; accentColor: string }) {
   return (
-    <div className="flex-shrink-0 w-[70px] h-[80px] md:w-[100px] md:h-[115px] rounded-t-xl rounded-b-lg border-[3px] border-[#1A1A1A] bg-white shadow-md overflow-hidden flex flex-col">
-      <div className="h-[6px] md:h-[8px] bg-red-600 flex-shrink-0" />
-      <div className="flex-1 flex items-center justify-center">
-        <span className="text-[#1A1A1A] text-3xl md:text-5xl font-extrabold leading-none tracking-tight">
+    <div className="flex-shrink-0" style={{ width: "clamp(70px, 12vw, 110px)", aspectRatio: "0.85" }}>
+      <svg viewBox="0 0 200 235" className="w-full h-full drop-shadow-md" xmlns="http://www.w3.org/2000/svg">
+        {/* Plate outline shape — shield/front number plate */}
+        <defs>
+          <clipPath id={`plate-${number}`}>
+            <path d="M 20,2 L 180,2 Q 198,2 198,20 L 198,140 Q 198,170 170,190 L 130,220 Q 110,233 100,235 Q 90,233 70,220 L 30,190 Q 2,170 2,140 L 2,20 Q 2,2 20,2 Z" />
+          </clipPath>
+        </defs>
+        {/* Black border */}
+        <path d="M 20,2 L 180,2 Q 198,2 198,20 L 198,140 Q 198,170 170,190 L 130,220 Q 110,233 100,235 Q 90,233 70,220 L 30,190 Q 2,170 2,140 L 2,20 Q 2,2 20,2 Z" fill="#1A1A1A" />
+        {/* White fill inset */}
+        <path d="M 25,7 L 175,7 Q 193,7 193,22 L 193,138 Q 193,166 166,185 L 128,216 Q 110,228 100,230 Q 90,228 72,216 L 34,185 Q 7,166 7,138 L 7,22 Q 7,7 25,7 Z" fill="white" />
+        {/* Color banner at top (where NAME would be) */}
+        <rect x="7" y="7" width="186" height="55" rx="15" fill={accentColor} clipPath={`url(#plate-${number})`} />
+        {/* Thin separator line below banner */}
+        <line x1="20" y1="65" x2="180" y2="65" stroke="#1A1A1A" strokeWidth="3" />
+        {/* Number */}
+        <text x="100" y="165" textAnchor="middle" dominantBaseline="middle" fill="#1A1A1A" fontFamily="system-ui, -apple-system, sans-serif" fontWeight="800" fontSize="100" letterSpacing="-4">
           {number}
-        </span>
-      </div>
+        </text>
+      </svg>
     </div>
   );
 }
@@ -18,12 +32,12 @@ export default function Home() {
     <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 relative overflow-hidden" style={{}}>
       <div className="text-center max-w-2xl relative z-10">
         <div className="flex items-center gap-4 md:gap-6 justify-center mb-4">
-          <NumberPlate number="75" />
+          <NumberPlate number="75" accentColor="#FF6600" />
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight">
             <span className="text-[#1A1A1A]">Fantasy</span>{" "}
             <span className="text-[#8A8A8A]">Supercross</span>
           </h1>
-          <NumberPlate number="99" />
+          <NumberPlate number="99" accentColor="#DC2626" />
         </div>
         <p className="text-[#6B6B6B] text-lg md:text-xl mb-10 leading-relaxed relative">
           Draft your riders. Score points from real race results. Compete against friends.
