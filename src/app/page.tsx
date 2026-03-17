@@ -2,15 +2,16 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 relative overflow-hidden" style={{ outline: "1px solid rgba(249, 115, 22, 0.03)" }}>
-      {/* Background watermark */}
+    <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 relative overflow-hidden" style={{ outline: "1px solid rgba(249, 115, 22, 0.07)" }}>
+      {/* Background watermark — anchored so bottom aligns with subtitle */}
       <div
         className="absolute inset-0 flex items-center justify-center pointer-events-none select-none"
         aria-hidden="true"
+        style={{ transform: "translateY(-12%)" }}
       >
         <span
           className="font-black tracking-tighter text-[#1A1A1A] opacity-[0.03] leading-none whitespace-nowrap"
-          style={{ fontSize: "clamp(20rem, 45vw, 50rem)" }}
+          style={{ fontSize: "clamp(14rem, 30vw, 35rem)" }}
         >
           Bar9
         </span>
