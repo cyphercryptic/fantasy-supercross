@@ -176,6 +176,7 @@ function EditLineupModal({
   races,
   stats,
   leagueId,
+  brandColor,
   onClose,
   onSaved,
 }: {
@@ -183,6 +184,7 @@ function EditLineupModal({
   races: Race[];
   stats: Record<number, RiderStats>;
   leagueId: string;
+  brandColor: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -377,7 +379,7 @@ function EditLineupModal({
                     <div className="flex items-center justify-between mb-2">
                       <h3 className="text-xs font-bold text-[#8A8A8A] uppercase tracking-widest">{label}</h3>
                       {selectedRace && (
-                        <span className={`text-xs font-bold ${isFull ? "text-green-600" : "text-[#8A8A8A]"}`}>
+                        <span className="text-xs font-bold" style={{ color: isFull ? brandColor : "#8A8A8A" }}>
                           {count}/{limit} starting
                         </span>
                       )}
@@ -394,18 +396,19 @@ function EditLineupModal({
                             onClick={() => selectedRace && !isRaceLocked && canSelect && toggleRider(rider.id)}
                             disabled={!selectedRace || isRaceLocked || (!isSelected && !canSelect)}
                             className={`w-full flex items-center justify-between rounded-lg p-3 border-2 transition-colors text-left ${
-                              isSelected
-                                ? "bg-[#E8E4DF] border-green-500"
-                                : canSelect && selectedRace
-                                ? "bg-[#E8E4DF] border-[#D4D0CB] hover:border-[#8A8A8A]"
-                                : "bg-[#E8E4DF] border-[#D4D0CB]"
+                              !isSelected
+                                ? canSelect && selectedRace
+                                  ? "bg-[#E8E4DF] border-[#D4D0CB] hover:border-[#8A8A8A]"
+                                  : "bg-[#E8E4DF] border-[#D4D0CB]"
+                                : "bg-[#E8E4DF]"
                             } ${!selectedRace ? "cursor-default" : ""}`}
+                            style={isSelected ? { borderColor: brandColor } : undefined}
                           >
                             <div className="flex items-center gap-2">
                               {selectedRace && (
                                 <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 ${
-                                  isSelected ? "border-green-500 bg-green-500" : "border-[#D4D0CB]"
-                                }`}>
+                                  !isSelected ? "border-[#D4D0CB]" : ""
+                                }`} style={isSelected ? { borderColor: brandColor, backgroundColor: brandColor } : undefined}>
                                   {isSelected && (
                                     <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -599,6 +602,8 @@ export default function TeamPage() {
   if (!data) return <div className="max-w-4xl mx-auto px-4 py-8 text-[#8A8A8A]">Loading...</div>;
 
   const displayName = data.team_name || "My Team";
+  const bikeConfig = parseBikeConfig(data.team_logo);
+  const brandColor = bikeConfig ? (BIKE_BRANDS[bikeConfig.brand]?.color || "#22c55e") : "#22c55e";
   const rosterFull = faData ? faData.myRoster.length >= faData.rosterSize : false;
 
   const filteredFreeAgents = faData ? faData.freeAgents.filter((r) => {
@@ -800,15 +805,18 @@ export default function TeamPage() {
                       {starters.length > 0 && (
                         <>
                           <div className="flex items-center gap-2 mb-2">
-                            <span className="text-xs font-semibold text-green-600 uppercase tracking-wide">Starters</span>
-                            <div className="flex-1 h-px bg-green-200" />
+                            <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: brandColor }}>Starters</span>
+                            <div className="flex-1 h-px" style={{ backgroundColor: `${brandColor}40` }} />
                           </div>
                           <div className="grid grid-cols-2 gap-2 mb-4">
                             {starters.map((rider) => (
                               <button
                                 key={rider.id}
                                 onClick={() => setSelectedRiderForStats(rider)}
-                                className="flex items-center gap-2 rounded-lg p-3 bg-[#E8E4DF] border-2 border-green-400/40 hover:border-green-500 transition-colors text-left"
+                                className="flex items-center gap-2 rounded-lg p-3 bg-[#E8E4DF] border-2 transition-colors text-left"
+                                style={{ borderColor: `${brandColor}66` }}
+                                onMouseEnter={(e) => (e.currentTarget.style.borderColor = brandColor)}
+                                onMouseLeave={(e) => (e.currentTarget.style.borderColor = `${brandColor}66`)}
                               >
                                 <TeamLogo team={rider.team} size="sm" />
                                 <div className="min-w-0">
@@ -1114,6 +1122,7 @@ export default function TeamPage() {
           races={races}
           stats={stats}
           leagueId={leagueId}
+          brandColor={brandColor}
           onClose={() => setShowLineupModal(false)}
           onSaved={refreshLineup}
         />
