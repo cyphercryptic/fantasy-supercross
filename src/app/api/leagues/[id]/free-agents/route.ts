@@ -29,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const rosteredIds = (rostered || []).map((r) => r.rider_id);
 
   // Free agents = riders NOT on any roster
-  let freeAgentQuery = supabase.from("riders").select("*").order("class").order("name");
+  let freeAgentQuery = supabase.from("riders").select("*").order("number", { ascending: true, nullsFirst: false });
   if (rosteredIds.length > 0) {
     freeAgentQuery = freeAgentQuery.not("id", "in", `(${rosteredIds.join(",")})`);
   }
