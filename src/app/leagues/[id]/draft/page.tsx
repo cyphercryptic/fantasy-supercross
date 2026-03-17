@@ -91,7 +91,8 @@ export default function DraftPage() {
       setTimeLeft(null);
       return;
     }
-    const started = new Date(pickStartedAt + "Z").getTime();
+    const raw = pickStartedAt.endsWith("Z") ? pickStartedAt : pickStartedAt + "Z";
+    const started = new Date(raw).getTime();
     const serverNow = new Date(serverTime).getTime();
     const elapsedAtFetch = Math.floor((serverNow - started) / 1000);
     const fetchedAt = Date.now();
@@ -165,7 +166,7 @@ export default function DraftPage() {
   const upcomingOrder: number[] = [];
   const numUsers = draft.draft_order.length;
   const remainingPicks = draft.total_picks - draft.pick_number + 1;
-  const showCount = Math.min(remainingPicks, numUsers * 2); // Show current + next round
+  const showCount = remainingPicks; // Show all remaining picks to fill the ticker
   for (let i = 0; i < showCount; i++) {
     const futurePickNum = draft.pick_number + i;
     const futureRound = Math.floor((futurePickNum - 1) / numUsers) + 1;

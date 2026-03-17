@@ -2,8 +2,17 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4">
-      <div className="text-center max-w-2xl">
+    <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-4 relative overflow-hidden">
+      {/* Background watermark */}
+      <div
+        className="absolute inset-0 flex items-center justify-center pointer-events-none select-none"
+        aria-hidden="true"
+      >
+        <span className="text-[20rem] md:text-[28rem] font-black tracking-tighter text-[#1A1A1A] opacity-[0.03] leading-none">
+          Bar9
+        </span>
+      </div>
+      <div className="text-center max-w-2xl relative z-10">
         <h1 className="text-5xl md:text-7xl font-extrabold mb-4 tracking-tight">
           <span className="text-[#1A1A1A]">Fantasy</span>{" "}
           <span className="text-[#8A8A8A]">Supercross</span>
@@ -27,7 +36,7 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-10 mt-24 max-w-4xl w-full">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-10 mt-24 max-w-4xl w-full relative z-10">
         {[
           { num: "1", title: "Draft Riders", desc: "Pick up to 8 supercross riders for your fantasy team from the full roster." },
           { num: "2", title: "Score Points", desc: "Earn points based on your riders' finishing positions in each round." },

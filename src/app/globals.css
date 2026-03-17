@@ -27,3 +27,9 @@ body::before {
       transparent 100%
     );
 }
+
+@media (max-width: 768px) {
+  body::before {
+    opacity: 0.35;
+  }
+}
