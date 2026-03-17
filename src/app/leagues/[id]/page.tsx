@@ -255,6 +255,23 @@ export default function LeagueDashboard() {
         </>
       )}
 
+      {/* Rules & Scoring Link */}
+      <Link
+        href={`/leagues/${id}/rules`}
+        className="flex items-center justify-between bg-[#F5F0EB] border border-[#D4D0CB] rounded-xl p-4 mb-6 shadow-sm hover:bg-[#EBE7E2] transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <span className="w-8 h-8 rounded-full bg-[#1A1A1A] text-white flex items-center justify-center text-sm font-bold">?</span>
+          <div>
+            <p className="text-[#1A1A1A] font-semibold text-sm">Rules & Scoring</p>
+            <p className="text-[#8A8A8A] text-xs">How to play, points table & bonus scoring</p>
+          </div>
+        </div>
+        <svg className="w-5 h-5 text-[#8A8A8A]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </Link>
+
       {/* League Settings */}
       <div className="bg-[#F5F0EB] border border-[#D4D0CB] rounded-xl p-4 mb-6 shadow-sm">
         <h3 className="text-[#8A8A8A] text-xs uppercase tracking-wide mb-2">League Settings</h3>
