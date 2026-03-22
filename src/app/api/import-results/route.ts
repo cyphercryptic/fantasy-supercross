@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import { getPointsForPosition } from "@/lib/scoring";
+import { RIDER_ALIASES } from "@/lib/rider-aliases";
 
 export const dynamic = "force-dynamic";
 
@@ -130,10 +131,11 @@ export async function POST(req: NextRequest) {
   const riders = allRiders || [];
 
   function findRider(scxName: string) {
-    const exact = riders.find((r) => r.name.toLowerCase() === scxName.toLowerCase());
+    const aliasName = RIDER_ALIASES[scxName] || scxName;
+    const exact = riders.find((r) => r.name.toLowerCase() === aliasName.toLowerCase());
     if (exact) return exact;
     for (const rider of riders) {
-      const normalizedScx = scxName.replace(/\./g, "").toLowerCase();
+      const normalizedScx = aliasName.replace(/\./g, "").toLowerCase();
       const normalizedDb = rider.name.replace(/\./g, "").toLowerCase();
       if (normalizedScx === normalizedDb) return rider;
     }
