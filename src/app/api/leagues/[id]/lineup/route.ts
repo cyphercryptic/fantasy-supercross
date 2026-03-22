@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
+import { isRaceLocked } from "@/lib/race-lock";
 
 export const dynamic = "force-dynamic";
 
@@ -71,8 +72,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!race) {
     return NextResponse.json({ error: "Race not found" }, { status: 404 });
   }
-  const raceStarted = race.race_time && new Date(race.race_time) <= new Date();
-  if (race.status === "completed" || raceStarted) {
+  if (isRaceLocked(race)) {
     return NextResponse.json({ error: "Lineup is locked — race has started" }, { status: 400 });
   }
 

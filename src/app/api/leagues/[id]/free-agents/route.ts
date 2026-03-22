@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
+import { isAnyRaceActive } from "@/lib/race-lock";
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +118,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (league!.draft_status !== "completed") {
     return NextResponse.json({ error: "Draft must be completed before making transactions" }, { status: 400 });
+  }
+
+  // Lock transactions while a race is active
+  const raceActive = await isAnyRaceActive();
+  if (raceActive) {
+    return NextResponse.json({ error: "Roster moves are locked while a race is in progress" }, { status: 400 });
   }
 
   if (!addRiderId && !dropRiderId) {

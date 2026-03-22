@@ -9,6 +9,7 @@ interface Race {
   date: string | null;
   location: string | null;
   status: string;
+  race_time: string | null;
 }
 
 function formatDate(dateStr: string) {
@@ -18,6 +19,15 @@ function formatDate(dateStr: string) {
     month: "short",
     day: "numeric",
     year: "numeric",
+  });
+}
+
+function formatTime(raceTime: string) {
+  const d = new Date(raceTime);
+  return d.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
   });
 }
 
@@ -136,6 +146,11 @@ export default function SchedulePage() {
               </h2>
               <p className="text-gray-300 mt-1">
                 {nextRace.date && formatDate(nextRace.date)}
+                {nextRace.race_time && (
+                  <span className="text-gray-400 ml-2">
+                    {formatTime(nextRace.race_time)}
+                  </span>
+                )}
               </p>
               {nextRace.location && (
                 <p className="text-gray-400 text-sm mt-0.5">
@@ -241,6 +256,11 @@ export default function SchedulePage() {
                 >
                   {race.date ? formatDate(race.date) : "TBD"}
                 </p>
+                {race.race_time && !isCompleted && (
+                  <p className="text-xs text-[#8A8A8A] mt-0.5">
+                    {formatTime(race.race_time)}
+                  </p>
+                )}
                 {isCompleted && (
                   <p className="text-[10px] text-[#8A8A8A] mt-0.5">View Results</p>
                 )}

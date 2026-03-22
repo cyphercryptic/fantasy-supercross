@@ -1,0 +1,32 @@
+name: Race Day Auto-Import
+
+on:
+  # Runs every 10 minutes on Saturdays between 6pm-midnight ET (23:00-05:00 UTC)
+  schedule:
+    - cron: "*/10 23 * * 6"   # Saturday 6pm-7pm ET (11pm UTC)
+    - cron: "*/10 0-4 * * 0"  # Saturday 7pm-midnight ET (Sun 12am-5am UTC)
+  # Allow manual trigger for non-Saturday races
+  workflow_dispatch:
+
+jobs:
+  auto-import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for race results
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$SITE_URL/api/cron/auto-import")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::warning::Auto-import returned status $HTTP_CODE"
+          fi
