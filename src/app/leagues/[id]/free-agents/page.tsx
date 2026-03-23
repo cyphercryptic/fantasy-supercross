@@ -13,6 +13,103 @@ interface Rider {
   class: string;
 }
 
+interface RiderStats {
+  avgFinish: number;
+  totalPoints: number;
+  totalBonus: number;
+  racesRaced: number;
+  recent: { round: number; raceName: string; position: number; points: number }[];
+}
+
+/* ─── Rider Stats Modal ─── */
+function RiderStatsModal({ rider, stats, onClose }: { rider: Rider; stats: RiderStats | undefined; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-[#F5F0EB] rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="bg-[#1A1A1A] text-white p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-bold text-lg">Rider Stats</h3>
+            <button onClick={onClose} className="text-gray-400 hover:text-white">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="flex items-center gap-3">
+            <TeamLogo team={rider.team} size="sm" />
+            <div>
+              <div className="flex items-center gap-2">
+                {rider.number != null && <span className="font-bold">#{rider.number}</span>}
+                <span className="font-medium">{rider.name}</span>
+              </div>
+              <div className="flex gap-2 mt-0.5">
+                {rider.team && <span className="text-gray-400 text-xs">{rider.team}</span>}
+                <span className="text-gray-500 text-xs bg-white/10 px-1.5 py-0.5 rounded">{rider.class}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats Summary */}
+        {stats ? (
+          <>
+            <div className="grid grid-cols-3 gap-3 p-4 border-b border-[#D4D0CB]">
+              <div className="text-center bg-[#EBE7E2] rounded-lg p-3">
+                <div className="text-2xl font-bold text-[#1A1A1A]">P{stats.avgFinish}</div>
+                <div className="text-[#8A8A8A] text-xs uppercase tracking-wide">Avg Finish</div>
+              </div>
+              <div className="text-center bg-[#EBE7E2] rounded-lg p-3">
+                <div className="text-2xl font-bold text-[#1A1A1A]">{stats.totalPoints}</div>
+                <div className="text-[#8A8A8A] text-xs uppercase tracking-wide">Points</div>
+              </div>
+              <div className="text-center bg-[#EBE7E2] rounded-lg p-3">
+                <div className="text-2xl font-bold text-[#1A1A1A]">{stats.racesRaced}</div>
+                <div className="text-[#8A8A8A] text-xs uppercase tracking-wide">Races</div>
+              </div>
+            </div>
+
+            {/* Race-by-Race Results */}
+            <div className="p-4 overflow-y-auto max-h-[40vh]">
+              <h4 className="text-xs font-bold text-[#8A8A8A] uppercase tracking-widest mb-3">Race Results</h4>
+              {stats.recent.length > 0 ? (
+                <div className="space-y-2">
+                  {stats.recent.map((r, i) => (
+                    <div key={i} className="flex items-center justify-between bg-[#E8E4DF] rounded-lg px-3 py-2.5 border border-[#D4D0CB]">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[#8A8A8A] text-xs font-bold w-8">R{r.round}</span>
+                        <span className="text-[#1A1A1A] text-sm font-medium truncate max-w-[160px]">{r.raceName || `Round ${r.round}`}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-xs w-7 h-7 flex items-center justify-center rounded-full font-bold ${
+                          r.position <= 3
+                            ? "bg-[#C8A84E]/20 text-[#C8A84E]"
+                            : r.position <= 10
+                            ? "bg-[#1A1A1A]/10 text-[#1A1A1A]"
+                            : "bg-[#E8E4DF] text-[#8A8A8A] border border-[#D4D0CB]"
+                        }`}>
+                          {r.position}
+                        </span>
+                        <span className="text-[#8A8A8A] text-xs w-10 text-right">{r.points}pts</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[#A0A0A0] text-center py-4 text-sm">No race results yet.</p>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="p-8 text-center">
+            <p className="text-[#A0A0A0] text-sm">No stats available yet.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface Transaction {
   id: number;
   user_id: number;
@@ -44,6 +141,8 @@ export default function FreeAgentsPage() {
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [tab, setTab] = useState<"pool" | "roster" | "log">("pool");
+  const [stats, setStats] = useState<Record<number, RiderStats>>({});
+  const [selectedRiderForStats, setSelectedRiderForStats] = useState<Rider | null>(null);
 
   const loadData = useCallback(() => {
     fetch(`/api/leagues/${id}/free-agents`).then((r) => r.json()).then(setData);
@@ -51,7 +150,8 @@ export default function FreeAgentsPage() {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    fetch(`/api/leagues/${id}/rider-stats`).then((r) => r.json()).then(setStats);
+  }, [loadData, id]);
 
   async function handleTransaction() {
     if (!selectedAdd && !selectedDrop) return;
@@ -239,11 +339,12 @@ export default function FreeAgentsPage() {
               return (
                 <div
                   key={rider.id}
-                  className={`rounded-lg p-3 border flex items-center justify-between transition-colors ${
+                  className={`rounded-lg p-3 border flex items-center justify-between transition-colors cursor-pointer ${
                     isSelected
                       ? "bg-green-50 border-green-400"
                       : "bg-[#E8E4DF] border-[#D4D0CB] hover:border-[#8A8A8A]"
                   }`}
+                  onClick={() => setSelectedRiderForStats(rider)}
                 >
                   <div className="flex items-center gap-3">
                     <TeamLogo team={rider.team} size="sm" />
@@ -261,7 +362,7 @@ export default function FreeAgentsPage() {
                     </div>
                   </div>
                   <button
-                    onClick={() => setSelectedAdd(isSelected ? null : rider)}
+                    onClick={(e) => { e.stopPropagation(); setSelectedAdd(isSelected ? null : rider); }}
                     className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                       isSelected
                         ? "bg-green-500 text-white"
@@ -298,11 +399,12 @@ export default function FreeAgentsPage() {
                       return (
                         <div
                           key={rider.id}
-                          className={`rounded-lg p-3 border flex items-center justify-between transition-colors ${
+                          className={`rounded-lg p-3 border flex items-center justify-between transition-colors cursor-pointer ${
                             isSelected
                               ? "bg-red-50 border-red-400"
-                              : "bg-[#E8E4DF] border-[#D4D0CB]"
+                              : "bg-[#E8E4DF] border-[#D4D0CB] hover:border-[#8A8A8A]"
                           }`}
+                          onClick={() => setSelectedRiderForStats(rider)}
                         >
                           <div className="flex items-center gap-3">
                             <TeamLogo team={rider.team} size="sm" />
@@ -317,7 +419,7 @@ export default function FreeAgentsPage() {
                             </div>
                           </div>
                           <button
-                            onClick={() => setSelectedDrop(isSelected ? null : rider)}
+                            onClick={(e) => { e.stopPropagation(); setSelectedDrop(isSelected ? null : rider); }}
                             className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                               isSelected
                                 ? "bg-red-500 text-white"
@@ -373,6 +475,15 @@ export default function FreeAgentsPage() {
             ))
           )}
         </div>
+      )}
+
+      {/* Rider Stats Modal */}
+      {selectedRiderForStats && (
+        <RiderStatsModal
+          rider={selectedRiderForStats}
+          stats={stats[selectedRiderForStats.id]}
+          onClose={() => setSelectedRiderForStats(null)}
+        />
       )}
     </div>
   );
