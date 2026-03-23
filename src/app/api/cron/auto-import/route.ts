@@ -175,7 +175,7 @@ export async function GET(req: NextRequest) {
       return null;
     }
 
-    const results: { raceId: number; raceName: string; status: string; resultsImported: number; bonusCount: number }[] = [];
+    const results: { raceId: number; raceName: string; status: string; resultsImported: number; bonusCount: number; unmatchedCount?: number }[] = [];
 
     for (const race of pendingRaces) {
       try {
@@ -233,23 +233,28 @@ export async function GET(req: NextRequest) {
           }
         }
 
-        // Save results
+        // Save results and track unmatched riders
         const upsertData: { race_id: number; rider_id: number; position: number; points: number }[] = [];
+        const unmatchedRiders: { name: string; position: number; points: number; raceClass: string }[] = [];
         let resultsImported = 0;
 
         for (const main of mainResults) {
+          const raceClass = main.type === "main_450" ? "450" : "250";
           for (let i = 0; i < main.results.length; i++) {
             const position = i + 1;
             const riderName = main.results[i];
             const rider = findRider(riderName);
+            const pts = getPointsForPosition(position);
             if (rider) {
               upsertData.push({
                 race_id: race.id,
                 rider_id: rider.id,
                 position,
-                points: getPointsForPosition(position),
+                points: pts,
               });
               resultsImported++;
+            } else if (pts > 0) {
+              unmatchedRiders.push({ name: riderName, position, points: pts, raceClass });
             }
           }
         }
@@ -273,12 +278,34 @@ export async function GET(req: NextRequest) {
         // Mark race as completed
         await supabase.from("races").update({ status: "completed" }).eq("id", race.id);
 
+        // Notify via n8n webhook if there are unmatched riders who scored points
+        if (unmatchedRiders.length > 0) {
+          const webhookUrl = process.env.N8N_WEBHOOK_URL;
+          if (webhookUrl) {
+            try {
+              await fetch(webhookUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  raceName: race.name,
+                  raceDate: race.date,
+                  unmatchedRiders,
+                  message: `${unmatchedRiders.length} rider(s) scored points in ${race.name} but are not in the Fantasy SX database:\n\n${unmatchedRiders.map((r) => `• ${r.name} — P${r.position} in ${r.raceClass} class (${r.points} pts missed)`).join("\n")}`,
+                }),
+              });
+            } catch (webhookErr) {
+              console.error("Webhook notification failed:", webhookErr);
+            }
+          }
+        }
+
         results.push({
           raceId: race.id,
           raceName: race.name,
           status: "imported",
           resultsImported,
           bonusCount: bonuses.length,
+          unmatchedCount: unmatchedRiders.length,
         });
       } catch (err) {
         results.push({
