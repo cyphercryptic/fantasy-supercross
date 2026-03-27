@@ -30,3 +30,18 @@ jobs:
           if [ "$HTTP_CODE" != "200" ]; then
             echo "::warning::Auto-import returned status $HTTP_CODE"
           fi
+
+      - name: Sync injury report
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$SITE_URL/api/cron/injury-report")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "Injury Report Status: $HTTP_CODE"
+          echo "Response: $BODY"

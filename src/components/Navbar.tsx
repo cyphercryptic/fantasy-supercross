@@ -192,6 +192,9 @@ export default function Navbar() {
                   )}
                 </div>
 
+                <Link href="/news" className="text-gray-300 hover:text-white text-sm">
+                  News
+                </Link>
                 <Link href="/schedule" className="text-gray-300 hover:text-white text-sm">
                   Schedule
                 </Link>
@@ -250,6 +253,9 @@ export default function Navbar() {
               </>
             ) : (
               <>
+                <Link href="/news" className="text-gray-300 hover:text-white text-sm">
+                  News
+                </Link>
                 <Link href="/schedule" className="text-gray-300 hover:text-white text-sm">
                   Schedule
                 </Link>
@@ -340,6 +346,13 @@ export default function Navbar() {
                 <div className="border-t border-[#333] my-2" />
 
                 <Link
+                  href="/news"
+                  onClick={() => setMobileOpen(false)}
+                  className="text-gray-300 hover:text-white hover:bg-[#2A2A2A] text-sm px-3 py-2.5 rounded-lg"
+                >
+                  News
+                </Link>
+                <Link
                   href="/schedule"
                   onClick={() => setMobileOpen(false)}
                   className="text-gray-300 hover:text-white hover:bg-[#2A2A2A] text-sm px-3 py-2.5 rounded-lg"
@@ -386,6 +399,13 @@ export default function Navbar() {
               </div>
             ) : (
               <div className="flex flex-col gap-1 pt-2">
+                <Link
+                  href="/news"
+                  onClick={() => setMobileOpen(false)}
+                  className="text-gray-300 hover:text-white hover:bg-[#2A2A2A] text-sm px-3 py-2.5 rounded-lg"
+                >
+                  News
+                </Link>
                 <Link
                   href="/schedule"
                   onClick={() => setMobileOpen(false)}

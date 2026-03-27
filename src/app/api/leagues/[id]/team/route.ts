@@ -74,7 +74,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (upcomingRace) {
     const { data: lineupEntries } = await supabase
       .from("weekly_lineups")
-      .select("riders(id, name, number, team, class)")
+      .select("riders(id, name, number, team, class, status)")
       .eq("league_id", id)
       .eq("user_id", targetUserId)
       .eq("race_id", upcomingRace.id);
@@ -85,7 +85,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // Get full roster
   const { data: rosterEntries } = await supabase
     .from("league_rosters")
-    .select("riders(id, name, number, team, class)")
+    .select("riders(id, name, number, team, class, status)")
     .eq("league_id", id)
     .eq("user_id", targetUserId);
 

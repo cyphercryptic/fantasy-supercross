@@ -15,7 +15,8 @@ CREATE TABLE riders (
   number INTEGER,
   team TEXT,
   class TEXT DEFAULT '450',
-  image_url TEXT
+  image_url TEXT,
+  status TEXT DEFAULT 'active'
 );
 
 CREATE TABLE races (
@@ -115,6 +116,28 @@ CREATE TABLE transactions (
   type TEXT NOT NULL,
   added_rider_id INTEGER REFERENCES riders(id) ON DELETE SET NULL,
   dropped_rider_id INTEGER REFERENCES riders(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE news_items (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  link TEXT NOT NULL UNIQUE,
+  image_url TEXT,
+  author TEXT,
+  published_at TIMESTAMPTZ NOT NULL,
+  category TEXT DEFAULT 'news',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE rider_injuries (
+  id SERIAL PRIMARY KEY,
+  rider_id INTEGER REFERENCES riders(id) ON DELETE CASCADE,
+  rider_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'out',
+  race_name TEXT,
+  news_item_id INTEGER REFERENCES news_items(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
