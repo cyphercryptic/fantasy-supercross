@@ -140,7 +140,10 @@ export async function GET(req: NextRequest) {
     let newArticles = 0;
     let injuriesUpdated = 0;
 
-    for (const item of rssItems) {
+    // Process oldest articles first so the most recent status wins
+    const sortedItems = [...rssItems].reverse();
+
+    for (const item of sortedItems) {
       // Check if already imported (by link)
       const { data: existing } = await supabase
         .from("news_items")
@@ -148,30 +151,29 @@ export async function GET(req: NextRequest) {
         .eq("link", item.link)
         .maybeSingle();
 
-      let newsItemId: number;
-
       if (existing) {
-        newsItemId = existing.id;
-      } else {
-        // Insert new article
-        const { data: inserted, error } = await supabase
-          .from("news_items")
-          .insert({
-            title: item.title,
-            description: item.description,
-            link: item.link,
-            image_url: item.imageUrl,
-            author: item.author,
-            published_at: new Date(item.pubDate).toISOString(),
-            category: "injury-report",
-          })
-          .select("id")
-          .single();
-
-        if (error || !inserted) continue;
-        newsItemId = inserted.id;
-        newArticles++;
+        // Already processed — skip entirely to avoid re-applying stale statuses
+        continue;
       }
+
+      // Insert new article
+      const { data: inserted, error } = await supabase
+        .from("news_items")
+        .insert({
+          title: item.title,
+          description: item.description,
+          link: item.link,
+          image_url: item.imageUrl,
+          author: item.author,
+          published_at: new Date(item.pubDate).toISOString(),
+          category: "injury-report",
+        })
+        .select("id")
+        .single();
+
+      if (error || !inserted) continue;
+      const newsItemId = inserted.id;
+      newArticles++;
 
       // Parse rider statuses from title
       const { inRiders, outRiders, raceName } = parseInjuryStatus(item.title);
@@ -180,7 +182,6 @@ export async function GET(req: NextRequest) {
       for (const name of outRiders) {
         const rider = findRider(name);
 
-        // Insert injury record
         await supabase.from("rider_injuries").insert({
           rider_id: rider?.id || null,
           rider_name: name,
@@ -189,7 +190,6 @@ export async function GET(req: NextRequest) {
           news_item_id: newsItemId,
         });
 
-        // Update rider status if matched
         if (rider) {
           await supabase.from("riders").update({ status: "out" }).eq("id", rider.id);
           injuriesUpdated++;
@@ -208,7 +208,6 @@ export async function GET(req: NextRequest) {
           news_item_id: newsItemId,
         });
 
-        // Mark rider as active again
         if (rider) {
           await supabase.from("riders").update({ status: "active" }).eq("id", rider.id);
           injuriesUpdated++;
