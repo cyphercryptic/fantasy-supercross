@@ -120,10 +120,18 @@ export async function GET(req: NextRequest) {
       // Try exact match
       const exact = riders.find((r) => r.name.toLowerCase() === aliasName.toLowerCase());
       if (exact) return exact;
-      // Try last name match
+      // Try normalized match (remove dots)
+      const normalized = aliasName.replace(/\./g, "").toLowerCase();
+      const normalizedMatch = riders.find((r) => r.name.replace(/\./g, "").toLowerCase() === normalized);
+      if (normalizedMatch) return normalizedMatch;
+      // Only try last name match if there's exactly ONE rider with that last name
+      // (avoids matching "Jett Lawrence" to "Hunter Lawrence")
       const lastName = aliasName.split(" ").pop()?.toLowerCase();
-      if (lastName) {
-        const lastNameMatches = riders.filter((r) => r.name.toLowerCase().endsWith(lastName));
+      if (lastName && lastName.length > 2) {
+        const lastNameMatches = riders.filter((r) => {
+          const riderLast = r.name.split(" ").pop()?.toLowerCase();
+          return riderLast === lastName;
+        });
         if (lastNameMatches.length === 1) return lastNameMatches[0];
       }
       return null;
