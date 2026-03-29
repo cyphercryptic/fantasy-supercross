@@ -98,6 +98,39 @@ async function fetchRaceResults(raceUrl: string): Promise<string[]> {
   return parseDriverNames(html);
 }
 
+// Auto-discover event ID from supercrosslive.com main results page
+async function discoverEventId(raceName: string): Promise<string | null> {
+  try {
+    const res = await fetch("https://results.supercrosslive.com/results/");
+    const html = await res.text();
+
+    // Extract city name from page title
+    const titleMatch = html.match(/<title>[^:]*::\s*([^<]+)<\/title>/i);
+    if (!titleMatch) return null;
+    const currentCity = titleMatch[1].trim().toLowerCase();
+
+    // Extract event_id from the page
+    const eventIdMatch = html.match(/event_id=(\d+)/);
+    if (!eventIdMatch) return null;
+    const eventId = eventIdMatch[1];
+
+    // Match against our race name (e.g., "Detroit" matches "Detroit")
+    const raceCity = raceName.toLowerCase().trim();
+    if (
+      currentCity.includes(raceCity) ||
+      raceCity.includes(currentCity) ||
+      // Handle variations like "Salt Lake City" vs "Salt Lake"
+      currentCity.replace(/\s+city/i, "") === raceCity.replace(/\s+city/i, "")
+    ) {
+      return eventId;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // GET /api/cron/auto-import — called by Vercel Cron to auto-import results
 export async function GET(req: NextRequest) {
   // Verify cron secret (Vercel sends Authorization: Bearer <CRON_SECRET>)
@@ -111,38 +144,35 @@ export async function GET(req: NextRequest) {
     const now = new Date();
     const todayStr = now.toISOString().split("T")[0]; // YYYY-MM-DD
 
-    // Quick check: is there any upcoming race today? If not, bail immediately.
-    const { data: todaysRaces } = await supabase
-      .from("races")
-      .select("id")
-      .eq("status", "upcoming")
-      .eq("date", todayStr);
-
-    // Also check for races from yesterday that might not have been imported yet
+    // Quick check: is there any upcoming race today or yesterday?
     const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = yesterday.toISOString().split("T")[0];
 
-    const { data: yesterdaysRaces } = await supabase
-      .from("races")
-      .select("id")
-      .eq("status", "upcoming")
-      .eq("date", yesterdayStr);
-
-    const hasRecentRace = (todaysRaces?.length || 0) > 0 || (yesterdaysRaces?.length || 0) > 0;
-    if (!hasRecentRace) {
-      return NextResponse.json({ message: "No race today — skipping", processed: 0 });
-    }
-
-    // Get all upcoming races with event IDs whose date has passed
-    const { data: allUpcoming } = await supabase
+    const { data: recentUpcoming } = await supabase
       .from("races")
       .select("*")
       .eq("status", "upcoming")
-      .not("event_id", "is", null);
+      .or(`date.eq.${todayStr},date.eq.${yesterdayStr}`);
 
-    // Filter to races whose race_time or date has passed
-    const pendingRaces = (allUpcoming || []).filter((race) => {
+    if (!recentUpcoming || recentUpcoming.length === 0) {
+      return NextResponse.json({ message: "No race today — skipping", processed: 0 });
+    }
+
+    // Auto-discover event IDs for races that don't have one
+    for (const race of recentUpcoming) {
+      if (!race.event_id) {
+        const discoveredId = await discoverEventId(race.name);
+        if (discoveredId) {
+          await supabase.from("races").update({ event_id: discoveredId }).eq("id", race.id);
+          race.event_id = discoveredId;
+        }
+      }
+    }
+
+    // Filter to races that have event IDs and whose time has passed
+    const pendingRaces = recentUpcoming.filter((race) => {
+      if (!race.event_id) return false;
       if (race.race_time) {
         return new Date(race.race_time) <= now;
       }
