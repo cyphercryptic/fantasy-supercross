@@ -157,17 +157,30 @@ export default function FreeAgentsPage() {
       .then((res) => {
         setRosterLocked(res.locked);
         setLockedRaceName(res.raceName);
+        // Only start polling if there's a race today
+        if (res.nextRaceDate) {
+          const today = new Date().toISOString().split("T")[0];
+          if (res.nextRaceDate === today) {
+            setShouldPoll(true);
+          }
+        }
       });
   }, [id]);
+
+  const [shouldPoll, setShouldPoll] = useState(false);
 
   useEffect(() => {
     loadData();
     checkLockStatus();
     fetch(`/api/leagues/${id}/rider-stats`).then((r) => r.json()).then(setStats);
-    // Re-check lock status every 60 seconds
+  }, [loadData, checkLockStatus, id]);
+
+  // Only poll every 60 seconds on race day
+  useEffect(() => {
+    if (!shouldPoll) return;
     const interval = setInterval(checkLockStatus, 60000);
     return () => clearInterval(interval);
-  }, [loadData, checkLockStatus, id]);
+  }, [shouldPoll, checkLockStatus]);
 
   async function handleTransaction() {
     if (!selectedAdd && !selectedDrop) return;
