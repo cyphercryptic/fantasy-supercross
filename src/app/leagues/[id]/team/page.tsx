@@ -227,6 +227,13 @@ function EditLineupModal({
     }
   }, [selectedRace, leagueId]);
 
+  // Re-check lock status every 30 seconds so it auto-locks when race starts
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const selectedRaceObj = races.find((r) => r.id === selectedRace);
   const isRaceLocked = selectedRaceObj?.status === "completed" ||
     (!!selectedRaceObj?.race_time && new Date(selectedRaceObj.race_time) <= new Date());

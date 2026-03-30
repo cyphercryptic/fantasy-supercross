@@ -144,15 +144,30 @@ export default function FreeAgentsPage() {
   const [tab, setTab] = useState<"pool" | "roster" | "log">("pool");
   const [stats, setStats] = useState<Record<number, RiderStats>>({});
   const [selectedRiderForStats, setSelectedRiderForStats] = useState<Rider | null>(null);
+  const [rosterLocked, setRosterLocked] = useState(false);
+  const [lockedRaceName, setLockedRaceName] = useState<string | null>(null);
 
   const loadData = useCallback(() => {
     fetch(`/api/leagues/${id}/free-agents`).then((r) => r.json()).then(setData);
   }, [id]);
 
+  const checkLockStatus = useCallback(() => {
+    fetch(`/api/leagues/${id}/lock-status`)
+      .then((r) => r.json())
+      .then((res) => {
+        setRosterLocked(res.locked);
+        setLockedRaceName(res.raceName);
+      });
+  }, [id]);
+
   useEffect(() => {
     loadData();
+    checkLockStatus();
     fetch(`/api/leagues/${id}/rider-stats`).then((r) => r.json()).then(setStats);
-  }, [loadData, id]);
+    // Re-check lock status every 60 seconds
+    const interval = setInterval(checkLockStatus, 60000);
+    return () => clearInterval(interval);
+  }, [loadData, checkLockStatus, id]);
 
   async function handleTransaction() {
     if (!selectedAdd && !selectedDrop) return;
@@ -219,8 +234,21 @@ export default function FreeAgentsPage() {
         Roster: {data.myRoster.length}/{data.rosterSize} riders
       </p>
 
+      {/* Race Lock Banner */}
+      {rosterLocked && (
+        <div className="bg-red-900/20 border border-red-700/50 rounded-xl p-4 mb-6 flex items-center gap-3">
+          <svg className="w-5 h-5 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          <div>
+            <p className="text-red-400 font-semibold text-sm">Roster Moves Locked</p>
+            <p className="text-red-400/70 text-xs">{lockedRaceName} is in progress — free agent transactions are disabled until the race is complete.</p>
+          </div>
+        </div>
+      )}
+
       {/* Transaction Builder */}
-      {(selectedAdd || selectedDrop) && (
+      {!rosterLocked && (selectedAdd || selectedDrop) && (
         <div className="bg-[#1A1A1A] rounded-xl p-4 mb-6 text-white">
           <h3 className="text-xs uppercase tracking-wider text-gray-400 mb-3">Pending Transaction</h3>
           <div className="flex flex-col sm:flex-row items-center gap-3">
@@ -365,16 +393,18 @@ export default function FreeAgentsPage() {
                       </div>
                     </div>
                   </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setSelectedAdd(isSelected ? null : rider); }}
-                    className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                      isSelected
-                        ? "bg-green-500 text-white"
-                        : "bg-[#1A1A1A] hover:bg-[#333] text-white"
-                    }`}
-                  >
-                    {isSelected ? "Selected" : "+ Add"}
-                  </button>
+                  {!rosterLocked && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setSelectedAdd(isSelected ? null : rider); }}
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                        isSelected
+                          ? "bg-green-500 text-white"
+                          : "bg-[#1A1A1A] hover:bg-[#333] text-white"
+                      }`}
+                    >
+                      {isSelected ? "Selected" : "+ Add"}
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -425,16 +455,18 @@ export default function FreeAgentsPage() {
                               {rider.team && <p className="text-[#8A8A8A] text-xs mt-0.5">{rider.team}</p>}
                             </div>
                           </div>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setSelectedDrop(isSelected ? null : rider); }}
-                            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                              isSelected
-                                ? "bg-red-500 text-white"
-                                : "bg-[#EBE7E2] hover:bg-red-100 hover:text-red-700 text-[#6B6B6B] border border-[#D4D0CB]"
-                            }`}
-                          >
-                            {isSelected ? "Dropping" : "Drop"}
-                          </button>
+                          {!rosterLocked && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setSelectedDrop(isSelected ? null : rider); }}
+                              className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                                isSelected
+                                  ? "bg-red-500 text-white"
+                                  : "bg-[#EBE7E2] hover:bg-red-100 hover:text-red-700 text-[#6B6B6B] border border-[#D4D0CB]"
+                              }`}
+                            >
+                              {isSelected ? "Dropping" : "Drop"}
+                            </button>
+                          )}
                         </div>
                       );
                     })}
