@@ -157,10 +157,13 @@ export default function FreeAgentsPage() {
       .then((res) => {
         setRosterLocked(res.locked);
         setLockedRaceName(res.raceName);
-        // Only start polling if there's a race today
-        if (res.nextRaceDate) {
-          const today = new Date().toISOString().split("T")[0];
-          if (res.nextRaceDate === today) {
+        // Only start polling if there's a race within the next hour
+        if (res.nextRaceTime) {
+          const raceTime = new Date(res.nextRaceTime);
+          const now = new Date();
+          const oneHourBefore = new Date(raceTime.getTime() - 60 * 60 * 1000);
+          const fiveHoursAfter = new Date(raceTime.getTime() + 5 * 60 * 60 * 1000);
+          if (now >= oneHourBefore && now <= fiveHoursAfter) {
             setShouldPoll(true);
           }
         }

@@ -19,16 +19,11 @@ export async function GET() {
   for (const race of upcomingRaces || []) {
     if (race.race_time) {
       const raceTime = new Date(race.race_time);
-      // Lock starts 1 hour before race
-      const lockStart = new Date(raceTime.getTime() - 60 * 60 * 1000);
-      // Lock ends at midnight ET on race day
-      // race_time already has timezone offset, so extract the date in ET
-      const raceDate = race.date || race.race_time.split("T")[0];
-      // Midnight ET = next day at 05:00 UTC (EST) or 04:00 UTC (EDT)
-      // Use a safe approach: midnight is ~5 hours after a 7pm race
+      // Lock starts at race time
+      // Lock ends ~5 hours after race start (roughly midnight)
       const lockEnd = new Date(raceTime.getTime() + 5 * 60 * 60 * 1000);
 
-      if (now >= lockStart && now <= lockEnd) {
+      if (now >= raceTime && now <= lockEnd) {
         locked = true;
         lockedRaceName = race.name;
         break;
