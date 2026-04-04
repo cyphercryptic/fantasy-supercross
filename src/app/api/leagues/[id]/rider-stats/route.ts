@@ -23,31 +23,27 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
-  // Get roster rider IDs
-  const { data: rosterEntries } = await supabase
-    .from("league_rosters")
-    .select("rider_id")
-    .eq("league_id", id)
-    .eq("user_id", user.id);
+  // Get ALL rider IDs (roster + free agents) so stats show everywhere
+  const { data: allRiders } = await supabase
+    .from("riders")
+    .select("id");
 
-  if (!rosterEntries || rosterEntries.length === 0) {
+  if (!allRiders || allRiders.length === 0) {
     return NextResponse.json({});
   }
 
-  const riderIds = rosterEntries.map((r) => r.rider_id);
+  const riderIds = allRiders.map((r) => r.id);
 
-  // Get all race results for these riders (include race name)
+  // Get all race results for all riders (include race name)
   const { data: allResults } = await supabase
     .from("race_results")
     .select("rider_id, position, points, races(round_number, name)")
-    .in("rider_id", riderIds)
     .order("rider_id");
 
-  // Get bonus stats
+  // Get bonus stats for all riders
   const { data: allBonuses } = await supabase
     .from("race_bonuses")
-    .select("rider_id, points")
-    .in("rider_id", riderIds);
+    .select("rider_id, points");
 
   // Aggregate stats per rider
   const statsMap = new Map<number, {
