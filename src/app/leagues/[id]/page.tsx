@@ -67,8 +67,8 @@ export default function LeagueDashboard() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/leagues/${id}`).then((r) => r.json()).then(setLeague);
-    fetch(`/api/leagues/${id}/leaderboard`).then((r) => r.json()).then(setStandings);
+    fetch(`/api/leagues/${id}`).then((r) => r.json()).then((d) => { if (!d.error) setLeague(d); });
+    fetch(`/api/leagues/${id}/leaderboard`).then((r) => r.json()).then((d) => { if (Array.isArray(d)) setStandings(d); });
     fetch("/api/races").then((r) => r.json()).then((races: Race[]) => {
       const upcoming = races.find((r) => r.status === "upcoming");
       if (upcoming) setUpcomingRace(upcoming);
