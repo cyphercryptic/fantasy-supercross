@@ -228,8 +228,8 @@ export default function FreeAgentsPage() {
       return matchesSearch && matchesClass;
     })
     .sort((a, b) => {
-      const ptsA = stats[a.id] ? stats[a.id].totalPoints + stats[a.id].totalBonus : 0;
-      const ptsB = stats[b.id] ? stats[b.id].totalPoints + stats[b.id].totalBonus : 0;
+      const ptsA = stats[a.id] ? stats[a.id].totalPoints : 0;
+      const ptsB = stats[b.id] ? stats[b.id].totalPoints : 0;
       return ptsB - ptsA;
     });
 
@@ -416,12 +416,10 @@ export default function FreeAgentsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    {stats[rider.id] && (
-                      <div className="text-right">
-                        <div className="text-[#1A1A1A] font-bold text-sm">{stats[rider.id].totalPoints + stats[rider.id].totalBonus}</div>
-                        <div className="text-[#A0A0A0] text-[10px] uppercase">pts</div>
-                      </div>
-                    )}
+                    <div className="text-right">
+                      <div className="text-[#1A1A1A] font-bold text-sm">{stats[rider.id] ? stats[rider.id].totalPoints : 0}</div>
+                      <div className="text-[#A0A0A0] text-[10px] uppercase">pts</div>
+                    </div>
                     {!rosterLocked && (
                       <button
                         onClick={(e) => { e.stopPropagation(); setSelectedAdd(isSelected ? null : rider); }}
