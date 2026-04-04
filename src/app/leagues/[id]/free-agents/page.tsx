@@ -220,12 +220,18 @@ export default function FreeAgentsPage() {
 
   const rosterFull = data.myRoster.length >= data.rosterSize;
 
-  const filteredFreeAgents = data.freeAgents.filter((r) => {
-    const matchesSearch = r.name.toLowerCase().includes(filter.toLowerCase()) ||
-      (r.team && r.team.toLowerCase().includes(filter.toLowerCase()));
-    const matchesClass = classFilter === "all" || r.class === classFilter;
-    return matchesSearch && matchesClass;
-  });
+  const filteredFreeAgents = data.freeAgents
+    .filter((r) => {
+      const matchesSearch = r.name.toLowerCase().includes(filter.toLowerCase()) ||
+        (r.team && r.team.toLowerCase().includes(filter.toLowerCase()));
+      const matchesClass = classFilter === "all" || r.class === classFilter;
+      return matchesSearch && matchesClass;
+    })
+    .sort((a, b) => {
+      const ptsA = stats[a.id] ? stats[a.id].totalPoints + stats[a.id].totalBonus : 0;
+      const ptsB = stats[b.id] ? stats[b.id].totalPoints + stats[b.id].totalBonus : 0;
+      return ptsB - ptsA;
+    });
 
   // Group roster by class
   const rosterByClass = {
@@ -409,18 +415,26 @@ export default function FreeAgentsPage() {
                       </div>
                     </div>
                   </div>
-                  {!rosterLocked && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setSelectedAdd(isSelected ? null : rider); }}
-                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                        isSelected
-                          ? "bg-green-500 text-white"
-                          : "bg-[#1A1A1A] hover:bg-[#333] text-white"
-                      }`}
-                    >
-                      {isSelected ? "Selected" : "+ Add"}
-                    </button>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {stats[rider.id] && (
+                      <div className="text-right">
+                        <div className="text-[#1A1A1A] font-bold text-sm">{stats[rider.id].totalPoints + stats[rider.id].totalBonus}</div>
+                        <div className="text-[#A0A0A0] text-[10px] uppercase">pts</div>
+                      </div>
+                    )}
+                    {!rosterLocked && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSelectedAdd(isSelected ? null : rider); }}
+                        className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                          isSelected
+                            ? "bg-green-500 text-white"
+                            : "bg-[#1A1A1A] hover:bg-[#333] text-white"
+                        }`}
+                      >
+                        {isSelected ? "Selected" : "+ Add"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
