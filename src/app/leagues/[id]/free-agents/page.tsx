@@ -12,6 +12,7 @@ interface Rider {
   team: string | null;
   class: string;
   status?: string;
+  seasonPoints?: number;
 }
 
 interface RiderStats {
@@ -175,7 +176,9 @@ export default function FreeAgentsPage() {
   useEffect(() => {
     loadData();
     checkLockStatus();
-    fetch(`/api/leagues/${id}/rider-stats`).then((r) => r.json()).then(setStats);
+    fetch(`/api/leagues/${id}/rider-stats`).then((r) => r.json()).then((data) => {
+      if (data && !data.error) setStats(data);
+    });
   }, [loadData, checkLockStatus, id]);
 
   // Only poll every 60 seconds on race day
@@ -226,11 +229,6 @@ export default function FreeAgentsPage() {
         (r.team && r.team.toLowerCase().includes(filter.toLowerCase()));
       const matchesClass = classFilter === "all" || r.class === classFilter;
       return matchesSearch && matchesClass;
-    })
-    .sort((a, b) => {
-      const ptsA = stats[a.id] ? stats[a.id].totalPoints : 0;
-      const ptsB = stats[b.id] ? stats[b.id].totalPoints : 0;
-      return ptsB - ptsA;
     });
 
   // Group roster by class
@@ -417,7 +415,7 @@ export default function FreeAgentsPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <div className="text-[#1A1A1A] font-bold text-sm">{stats[rider.id] ? stats[rider.id].totalPoints : 0}</div>
+                      <div className="text-[#1A1A1A] font-bold text-sm">{rider.seasonPoints || 0}</div>
                       <div className="text-[#A0A0A0] text-[10px] uppercase">pts</div>
                     </div>
                     {!rosterLocked && (

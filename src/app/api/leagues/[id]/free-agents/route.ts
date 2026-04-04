@@ -38,6 +38,31 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
   const { data: freeAgents } = await freeAgentQuery;
 
+  // Get season points for all free agents
+  const freeAgentIds = (freeAgents || []).map((r) => r.id);
+  let seasonPoints: Record<number, number> = {};
+  if (freeAgentIds.length > 0) {
+    const { data: results } = await supabase
+      .from("race_results")
+      .select("rider_id, points")
+      .in("rider_id", freeAgentIds);
+    const { data: bonuses } = await supabase
+      .from("race_bonuses")
+      .select("rider_id, points")
+      .in("rider_id", freeAgentIds);
+    for (const r of results || []) {
+      seasonPoints[r.rider_id] = (seasonPoints[r.rider_id] || 0) + r.points;
+    }
+    for (const b of bonuses || []) {
+      seasonPoints[b.rider_id] = (seasonPoints[b.rider_id] || 0) + b.points;
+    }
+  }
+
+  // Attach season points and sort by points desc
+  const freeAgentsWithPoints = (freeAgents || [])
+    .map((r) => ({ ...r, seasonPoints: seasonPoints[r.id] || 0 }))
+    .sort((a, b) => b.seasonPoints - a.seasonPoints);
+
   // User's current roster
   const { data: rosterEntries } = await supabase
     .from("league_rosters")
@@ -87,7 +112,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     .eq("id", id)
     .single();
 
-  return NextResponse.json({ freeAgents, myRoster, transactions, rosterSize: league!.roster_size });
+  return NextResponse.json({ freeAgents: freeAgentsWithPoints, myRoster, transactions, rosterSize: league!.roster_size });
 }
 
 // POST — add/drop transaction
