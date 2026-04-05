@@ -780,21 +780,31 @@ export default function TeamPage() {
         <>
           <div className="flex gap-1 bg-[#EBE7E2] rounded-lg p-1 mb-6">
             {[
-              { key: "roster" as const, label: "My Roster" },
-              { key: "freeAgents" as const, label: "Free Agents" },
-              { key: "activity" as const, label: "Activity" },
-            ].map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setTab(key)}
-                className={`flex-1 py-2.5 px-3 rounded-md text-sm font-medium transition-colors ${
-                  tab === key
-                    ? "bg-[#1A1A1A] text-white shadow-sm"
-                    : "text-[#6B6B6B] hover:text-[#1A1A1A]"
-                }`}
-              >
-                {label}
-              </button>
+              { key: "roster" as const, label: "My Roster", href: null },
+              { key: "freeAgents" as const, label: "Free Agents", href: `/leagues/${leagueId}/free-agents` },
+              { key: "activity" as const, label: "Activity", href: null },
+            ].map(({ key, label, href }) => (
+              href ? (
+                <Link
+                  key={key}
+                  href={href}
+                  className="flex-1 py-2.5 px-3 rounded-md text-sm font-medium transition-colors text-center text-[#6B6B6B] hover:text-[#1A1A1A]"
+                >
+                  {label}
+                </Link>
+              ) : (
+                <button
+                  key={key}
+                  onClick={() => setTab(key)}
+                  className={`flex-1 py-2.5 px-3 rounded-md text-sm font-medium transition-colors ${
+                    tab === key
+                      ? "bg-[#1A1A1A] text-white shadow-sm"
+                      : "text-[#6B6B6B] hover:text-[#1A1A1A]"
+                  }`}
+                >
+                  {label}
+                </button>
+              )
             ))}
           </div>
 
