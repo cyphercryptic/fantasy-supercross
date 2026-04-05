@@ -991,20 +991,26 @@ export default function TeamPage() {
                         </div>
                       </div>
                     </div>
-                    <button
-                      onClick={() => {
-                        setSelectedAdd(rider);
-                        if (rosterFull) {
-                          setShowDropModal(true);
-                        } else {
-                          setSelectedDrop(null);
-                          setShowDropModal(true);
-                        }
-                      }}
-                      className="bg-[#1A1A1A] hover:bg-[#333] text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
-                    >
-                      + Add
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <div className="text-[#1A1A1A] font-bold text-sm">{(rider as Record<string, unknown>).seasonPoints as number || 0}</div>
+                        <div className="text-[#A0A0A0] text-[10px] uppercase">pts</div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedAdd(rider);
+                          if (rosterFull) {
+                            setShowDropModal(true);
+                          } else {
+                            setSelectedDrop(null);
+                            setShowDropModal(true);
+                          }
+                        }}
+                        className="bg-[#1A1A1A] hover:bg-[#333] text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
+                      >
+                        + Add
+                      </button>
+                    </div>
                   </div>
                 ))}
                 {filteredFreeAgents.length === 0 && (
