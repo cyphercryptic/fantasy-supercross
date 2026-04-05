@@ -341,10 +341,19 @@ export default function FreeAgentsPage() {
       {/* Tabs */}
       <div className="flex gap-1 bg-[#EBE7E2] rounded-lg p-1 mb-6">
         {[
-          { key: "pool" as const, label: "Free Agents", count: data.freeAgents.length },
-          { key: "roster" as const, label: "My Roster", count: data.myRoster.length },
-          { key: "log" as const, label: "Activity", count: data.transactions.length },
-        ].map(({ key, label, count }) => (
+          { key: "pool" as const, label: "Free Agents", count: data.freeAgents.length, href: null },
+          { key: "roster" as const, label: "My Roster", count: data.myRoster.length, href: `/leagues/${id}/team` },
+          { key: "log" as const, label: "Activity", count: data.transactions.length, href: null },
+        ].map(({ key, label, count, href }) => (
+          href ? (
+            <Link
+              key={key}
+              href={href}
+              className="flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors text-center text-[#6B6B6B] hover:text-[#1A1A1A]"
+            >
+              {label} <span className="text-xs opacity-60">({count})</span>
+            </Link>
+          ) : (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -356,6 +365,7 @@ export default function FreeAgentsPage() {
           >
             {label} <span className="text-xs opacity-60">({count})</span>
           </button>
+          )
         ))}
       </div>
 
