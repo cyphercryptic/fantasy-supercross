@@ -92,10 +92,26 @@ async function fetchOverallResults(raceUrl: string): Promise<string[]> {
   return names;
 }
 
-async function fetchRaceResults(raceUrl: string): Promise<string[]> {
+async function fetchRaceResults(raceUrl: string): Promise<{ names: string[]; holeshotRider: string | null }> {
   const res = await fetch(raceUrl);
   const html = await res.text();
-  return parseDriverNames(html);
+  const names = parseDriverNames(html);
+
+  // Detect holeshot winner — look for "Holeshot" status near a rider name
+  let holeshotRider: string | null = null;
+  const holeshotMatch = html.match(/driverNames\.push\('([^']+)'\)[\s\S]*?driver_race_status[^>]*>Holeshot/i);
+  if (holeshotMatch) {
+    holeshotRider = holeshotMatch[1];
+  } else {
+    // Alternative: find the rider name closest before a Holeshot tag
+    const holeRegex = /([A-Z][A-Z\s'.,-]+)\s*<small[^>]*class="driver_race_status"[^>]*>\s*Holeshot/i;
+    const holeMatch = html.match(holeRegex);
+    if (holeMatch) {
+      holeshotRider = holeMatch[1].trim();
+    }
+  }
+
+  return { names, holeshotRider };
 }
 
 // Auto-discover event ID from supercrosslive.com main results page
@@ -234,14 +250,30 @@ export async function GET(req: NextRequest) {
         const bonuses: { riderId: number; type: string }[] = [];
 
         for (const eventRace of eventRaces) {
-          const finishOrder = eventRace.isOverall
-            ? await fetchOverallResults(eventRace.url)
-            : await fetchRaceResults(eventRace.url);
+          let finishOrder: string[];
+          let holeshotRider: string | null = null;
+
+          if (eventRace.isOverall) {
+            finishOrder = await fetchOverallResults(eventRace.url);
+          } else {
+            const result = await fetchRaceResults(eventRace.url);
+            finishOrder = result.names;
+            holeshotRider = result.holeshotRider;
+          }
 
           if (finishOrder.length === 0) continue;
 
           if (eventRace.type === "main_450" || eventRace.type === "main_250") {
             mainResults.push({ type: eventRace.type, results: finishOrder });
+
+            // Auto-detect holeshot from main event
+            if (holeshotRider) {
+              const hsRider = findRider(holeshotRider);
+              if (hsRider) {
+                const classPrefix = eventRace.type === "main_450" ? "450" : "250";
+                bonuses.push({ riderId: hsRider.id, type: `holeshot_${classPrefix}` });
+              }
+            }
           }
 
           if (eventRace.type === "heat_250" || eventRace.type === "heat_450") {
