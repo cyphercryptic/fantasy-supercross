@@ -193,8 +193,9 @@ export async function GET(req: NextRequest) {
     const riders = allRiders || [];
 
     function findRider(scxName: string) {
-      // Check aliases first (e.g., "Max Vohland" → "Maximus Vohland")
-      const aliasName = RIDER_ALIASES[scxName] || scxName;
+      // Check aliases first (e.g., "Max Vohland" → "Maximus Vohland") — case-insensitive
+      const aliasKey = Object.keys(RIDER_ALIASES).find((k) => k.toLowerCase() === scxName.toLowerCase());
+      const aliasName = aliasKey ? RIDER_ALIASES[aliasKey] : scxName;
       const exact = riders.find((r) => r.name.toLowerCase() === aliasName.toLowerCase());
       if (exact) return exact;
       for (const rider of riders) {
