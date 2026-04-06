@@ -29,6 +29,18 @@ async function fetchEntryList(eventId: string, classId: string): Promise<string[
   return names;
 }
 
+// Round-to-region mapping for 250 class
+const WEST_ROUNDS = new Set([1, 2, 3, 4, 5, 6, 16]);
+const EAST_ROUNDS = new Set([7, 8, 9, 11, 13, 14, 15]);
+const SHOWDOWN_ROUNDS = new Set([10, 12, 17]);
+
+function get250Region(roundNumber: number): "west" | "east" | "showdown" | null {
+  if (WEST_ROUNDS.has(roundNumber)) return "west";
+  if (EAST_ROUNDS.has(roundNumber)) return "east";
+  if (SHOWDOWN_ROUNDS.has(roundNumber)) return "showdown";
+  return null;
+}
+
 // Discover event ID and class IDs from supercrosslive main page
 async function discoverEventInfo(): Promise<{ eventId: string; classIds: string[] } | null> {
   try {
@@ -59,7 +71,7 @@ export async function GET(req: NextRequest) {
     // Get the next upcoming race
     const { data: nextRace } = await supabase
       .from("races")
-      .select("id, name, event_id")
+      .select("id, name, event_id, round_number")
       .eq("status", "upcoming")
       .order("date", { ascending: true })
       .limit(1)
@@ -99,7 +111,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Get all riders from DB
-    const { data: allRiders } = await supabase.from("riders").select("id, name, status");
+    const { data: allRiders } = await supabase.from("riders").select("id, name, status, class");
+
+    // Determine which 250 region this race is
+    const raceRegion = nextRace?.round_number ? get250Region(nextRace.round_number) : null;
     const riders = allRiders || [];
 
     // Build reverse alias map (DB name → possible entry list names)
@@ -134,6 +149,10 @@ export async function GET(req: NextRequest) {
     let markedActive = 0;
 
     for (const rider of riders) {
+      // Skip 250 riders from the opposite region — they're not expected to be on the entry list
+      if (raceRegion === "east" && rider.class === "250W") continue;
+      if (raceRegion === "west" && rider.class === "250E") continue;
+
       const onList = isOnEntryList(rider.name);
 
       if (!onList && rider.status !== "out") {
@@ -145,6 +164,15 @@ export async function GET(req: NextRequest) {
         await supabase.from("riders").update({ status: "active" }).eq("id", rider.id);
         markedActive++;
       }
+    }
+
+    // Also reset opposite-region 250 riders to active (they're not "out", just not racing this round)
+    if (raceRegion === "east") {
+      const { count } = await supabase.from("riders").update({ status: "active" }).eq("class", "250W").eq("status", "out");
+      if (count) markedActive += count;
+    } else if (raceRegion === "west") {
+      const { count } = await supabase.from("riders").update({ status: "active" }).eq("class", "250E").eq("status", "out");
+      if (count) markedActive += count;
     }
 
     return NextResponse.json({

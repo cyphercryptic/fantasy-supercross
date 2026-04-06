@@ -320,7 +320,7 @@ export async function GET(req: NextRequest) {
                   raceName: race.name,
                   raceDate: race.date,
                   unmatchedRiders,
-                  message: `${unmatchedRiders.length} rider(s) scored points in ${race.name} but are not in the Fantasy SX database:\n\n${unmatchedRiders.map((r) => `• ${r.name} — P${r.position} in ${r.raceClass} class (${r.points} pts missed)`).join("\n")}`,
+                  message: `<h2>Fantasy SX: Unmatched Riders</h2><p>${unmatchedRiders.length} rider(s) scored points in <strong>${race.name}</strong> but are not in the database:</p><ul>${unmatchedRiders.map((r) => `<li><strong>${r.name}</strong> — P${r.position} in ${r.raceClass} class (${r.points} pts missed)</li>`).join("")}</ul>`,
                 }),
               });
             } catch (webhookErr) {
