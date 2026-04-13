@@ -10,7 +10,7 @@ const MANUFACTURER_STYLES: Record<string, { bg: string; text: string; label: str
   triumph: { bg: "bg-black", text: "text-white", label: "T" },
   gasgas: { bg: "bg-red-700", text: "text-white", label: "GG" },
   beta: { bg: "bg-red-500", text: "text-white", label: "B" },
-  ducati: { bg: "bg-red-600", text: "text-white", label: "D" },
+  ducati: { bg: "bg-white", text: "text-red-600", label: "D" },
 };
 
 function getManufacturerStyle(team: string) {
