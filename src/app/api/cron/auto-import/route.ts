@@ -92,26 +92,60 @@ async function fetchOverallResults(raceUrl: string): Promise<string[]> {
   return names;
 }
 
-async function fetchRaceResults(raceUrl: string): Promise<{ names: string[]; holeshotRider: string | null }> {
+async function fetchRaceResults(raceUrl: string, expectedCity?: string): Promise<{ names: string[]; holeshotRider: string | null; cityMismatch?: boolean }> {
   const res = await fetch(raceUrl);
   const html = await res.text();
   const names = parseDriverNames(html);
 
-  // Detect holeshot winner — look for "Holeshot" status near a rider name
-  let holeshotRider: string | null = null;
-  const holeshotMatch = html.match(/driverNames\.push\('([^']+)'\)[\s\S]*?driver_race_status[^>]*>Holeshot/i);
-  if (holeshotMatch) {
-    holeshotRider = holeshotMatch[1];
-  } else {
-    // Alternative: find the rider name closest before a Holeshot tag
-    const holeRegex = /([A-Z][A-Z\s'.,-]+)\s*<small[^>]*class="driver_race_status"[^>]*>\s*Holeshot/i;
-    const holeMatch = html.match(holeRegex);
-    if (holeMatch) {
-      holeshotRider = holeMatch[1].trim();
+  // Verify the race page is for the expected city (supercrosslive sometimes has stale links)
+  let cityMismatch = false;
+  if (expectedCity) {
+    const titleMatch = html.match(/<title>[^:]*::\s*([^:]+?)\s*::/i);
+    if (titleMatch) {
+      const pageCity = titleMatch[1].trim().toLowerCase();
+      if (!pageCity.includes(expectedCity.toLowerCase()) && !expectedCity.toLowerCase().includes(pageCity)) {
+        cityMismatch = true;
+      }
     }
   }
 
-  return { names, holeshotRider };
+  // Detect holeshot winner — find rider name directly adjacent to the Holeshot tag
+  let holeshotRider: string | null = null;
+  const holeRegex = /([A-Z][A-Z\s'.,-]+)\s*<small[^>]*class="driver_race_status"[^>]*>\s*Holeshot/i;
+  const holeMatch = html.match(holeRegex);
+  if (holeMatch) {
+    holeshotRider = holeMatch[1].trim();
+  }
+
+  return { names, holeshotRider, cityMismatch };
+}
+
+// When event page links are stale, search for the correct race by scanning nearby IDs
+async function findCorrectRaceId(staleId: string, expectedCity: string, raceType: string): Promise<string | null> {
+  const baseId = parseInt(staleId);
+  // Scan a range around the stale ID — correct IDs are usually nearby
+  for (let offset = 1; offset <= 30; offset++) {
+    for (const id of [baseId + offset, baseId - offset]) {
+      try {
+        const res = await fetch(`https://results.supercrosslive.com/results/?p=view_race_result&id=${id}`);
+        const html = await res.text();
+        const titleMatch = html.match(/<title>[^:]*::\s*([^:]+?)\s*::\s*([^<]+)/i);
+        if (!titleMatch) continue;
+        const pageCity = titleMatch[1].trim().toLowerCase();
+        const pageClass = titleMatch[2].trim().toLowerCase();
+        const expectedClass = raceType.includes("450") ? "450" : "250";
+        if (
+          (pageCity.includes(expectedCity.toLowerCase()) || expectedCity.toLowerCase().includes(pageCity)) &&
+          pageClass.includes(expectedClass)
+        ) {
+          return String(id);
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+  return null;
 }
 
 // Auto-discover event ID from supercrosslive.com main results page
@@ -256,9 +290,25 @@ export async function GET(req: NextRequest) {
           if (eventRace.isOverall) {
             finishOrder = await fetchOverallResults(eventRace.url);
           } else {
-            const result = await fetchRaceResults(eventRace.url);
+            const result = await fetchRaceResults(eventRace.url, race.name);
             finishOrder = result.names;
             holeshotRider = result.holeshotRider;
+
+            // If the race page is for the wrong city, try to find the correct one
+            if (result.cityMismatch && (eventRace.type === "main_450" || eventRace.type === "main_250")) {
+              const raceIdMatch = eventRace.url.match(/id=(\d+)/);
+              if (raceIdMatch) {
+                const correctId = await findCorrectRaceId(raceIdMatch[1], race.name, eventRace.type);
+                if (correctId) {
+                  const correctedUrl = `https://results.supercrosslive.com/results/?p=view_race_result&id=${correctId}`;
+                  const corrected = await fetchRaceResults(correctedUrl, race.name);
+                  if (!corrected.cityMismatch && corrected.names.length > 0) {
+                    finishOrder = corrected.names;
+                    holeshotRider = corrected.holeshotRider;
+                  }
+                }
+              }
+            }
           }
 
           if (finishOrder.length === 0) continue;

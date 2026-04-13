@@ -1,6 +1,6 @@
 "use client";
 
-const TEAM_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+const MANUFACTURER_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   yamaha: { bg: "bg-blue-700", text: "text-white", label: "Y" },
   ktm: { bg: "bg-orange-500", text: "text-white", label: "KTM" },
   honda: { bg: "bg-red-600", text: "text-white", label: "H" },
@@ -9,13 +9,22 @@ const TEAM_STYLES: Record<string, { bg: string; text: string; label: string }> =
   suzuki: { bg: "bg-yellow-400", text: "text-blue-900", label: "S" },
   triumph: { bg: "bg-black", text: "text-white", label: "T" },
   gasgas: { bg: "bg-red-700", text: "text-white", label: "GG" },
+  beta: { bg: "bg-red-500", text: "text-white", label: "B" },
+  ducati: { bg: "bg-red-600", text: "text-white", label: "D" },
 };
+
+function getManufacturerStyle(team: string) {
+  const lower = team.toLowerCase();
+  for (const [mfg, style] of Object.entries(MANUFACTURER_STYLES)) {
+    if (lower.includes(mfg)) return style;
+  }
+  return { bg: "bg-gray-600", text: "text-white", label: team.slice(0, 2).toUpperCase() };
+}
 
 export default function TeamLogo({ team, size = "md" }: { team: string | null; size?: "sm" | "md" }) {
   if (!team) return null;
 
-  const key = team.toLowerCase().replace(/\s+/g, "");
-  const style = TEAM_STYLES[key] || { bg: "bg-gray-600", text: "text-white", label: team.slice(0, 2).toUpperCase() };
+  const style = getManufacturerStyle(team);
 
   const sizeClasses = size === "sm"
     ? "w-6 h-6 text-[9px]"

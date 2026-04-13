@@ -342,7 +342,7 @@ export default function FreeAgentsPage() {
       <div className="flex gap-1 bg-[#EBE7E2] rounded-lg p-1 mb-6">
         {[
           { key: "pool" as const, label: "Free Agents", count: data.freeAgents.length, href: null },
-          { key: "roster" as const, label: "My Roster", count: data.myRoster.length, href: `/leagues/${id}/team` },
+          { key: "roster" as const, label: "My Roster", count: data.myRoster.length, href: null },
           { key: "log" as const, label: "Activity", count: data.transactions.length, href: null },
         ].map(({ key, label, count, href }) => (
           href ? (
