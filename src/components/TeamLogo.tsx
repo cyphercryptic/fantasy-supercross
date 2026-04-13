@@ -13,8 +13,18 @@ const MANUFACTURER_STYLES: Record<string, { bg: string; text: string; label: str
   ducati: { bg: "bg-white", text: "text-red-600", label: "D" },
 };
 
+// Teams whose name doesn't contain the manufacturer
+const TEAM_MANUFACTURER_MAP: Record<string, string> = {
+  "partzilla blaster prmx racing": "kawasaki",
+  "team tedder": "ktm",
+};
+
 function getManufacturerStyle(team: string) {
   const lower = team.toLowerCase();
+  // Check explicit team-to-manufacturer mapping first
+  const mappedMfg = TEAM_MANUFACTURER_MAP[lower];
+  if (mappedMfg && MANUFACTURER_STYLES[mappedMfg]) return MANUFACTURER_STYLES[mappedMfg];
+  // Then check if team name contains a manufacturer
   for (const [mfg, style] of Object.entries(MANUFACTURER_STYLES)) {
     if (lower.includes(mfg)) return style;
   }

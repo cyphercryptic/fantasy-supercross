@@ -142,11 +142,13 @@ export default function FreeAgentsPage() {
   const [selectedDrop, setSelectedDrop] = useState<Rider | null>(null);
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [tab, setTab] = useState<"pool" | "roster" | "log">("pool");
+  const [tab, setTab] = useState<"pool" | "log">("pool");
   const [stats, setStats] = useState<Record<number, RiderStats>>({});
   const [selectedRiderForStats, setSelectedRiderForStats] = useState<Rider | null>(null);
   const [rosterLocked, setRosterLocked] = useState(false);
   const [lockedRaceName, setLockedRaceName] = useState<string | null>(null);
+  // Transaction flow: "idle" -> "pick-drop" -> "confirm"
+  const [txnStep, setTxnStep] = useState<"idle" | "pick-drop" | "confirm">("idle");
 
   const loadData = useCallback(() => {
     fetch(`/api/leagues/${id}/free-agents`).then((r) => r.json()).then(setData);
@@ -158,7 +160,6 @@ export default function FreeAgentsPage() {
       .then((res) => {
         setRosterLocked(res.locked);
         setLockedRaceName(res.raceName);
-        // Only start polling if there's a race within the next hour
         if (res.nextRaceTime) {
           const raceTime = new Date(res.nextRaceTime);
           const now = new Date();
@@ -181,12 +182,36 @@ export default function FreeAgentsPage() {
     });
   }, [loadData, checkLockStatus, id]);
 
-  // Only poll every 60 seconds on race day
   useEffect(() => {
     if (!shouldPoll) return;
     const interval = setInterval(checkLockStatus, 60000);
     return () => clearInterval(interval);
   }, [shouldPoll, checkLockStatus]);
+
+  function handleAddClick(rider: Rider) {
+    if (rosterLocked) return;
+    setSelectedAdd(rider);
+    setSelectedDrop(null);
+    const rosterFull = data && data.myRoster.length >= data.rosterSize;
+    if (rosterFull) {
+      // Roster is full — user must pick someone to drop
+      setTxnStep("pick-drop");
+    } else {
+      // Roster has space — go straight to confirm (no drop needed)
+      setTxnStep("confirm");
+    }
+  }
+
+  function handleDropSelect(rider: Rider) {
+    setSelectedDrop(rider);
+    setTxnStep("confirm");
+  }
+
+  function cancelTransaction() {
+    setSelectedAdd(null);
+    setSelectedDrop(null);
+    setTxnStep("idle");
+  }
 
   async function handleTransaction() {
     if (!selectedAdd && !selectedDrop) return;
@@ -210,8 +235,7 @@ export default function FreeAgentsPage() {
       return;
     }
 
-    setSelectedAdd(null);
-    setSelectedDrop(null);
+    cancelTransaction();
     setMessage("Transaction complete!");
     loadData();
     setTimeout(() => setMessage(""), 3000);
@@ -220,8 +244,6 @@ export default function FreeAgentsPage() {
   if (!data) {
     return <div className="max-w-4xl mx-auto px-4 py-8 text-[#8A8A8A]">Loading...</div>;
   }
-
-  const rosterFull = data.myRoster.length >= data.rosterSize;
 
   const filteredFreeAgents = data.freeAgents
     .filter((r) => {
@@ -267,66 +289,6 @@ export default function FreeAgentsPage() {
         </div>
       )}
 
-      {/* Transaction Builder */}
-      {!rosterLocked && (selectedAdd || selectedDrop) && (
-        <div className="bg-[#1A1A1A] rounded-xl p-4 mb-6 text-white">
-          <h3 className="text-xs uppercase tracking-wider text-gray-400 mb-3">Pending Transaction</h3>
-          <div className="flex flex-col sm:flex-row items-center gap-3">
-            {selectedAdd && (
-              <div className="flex items-center gap-2 bg-green-900/30 border border-green-700 rounded-lg px-3 py-2 flex-1 w-full sm:w-auto">
-                <span className="text-green-400 text-xs font-bold uppercase">Add</span>
-                <TeamLogo team={selectedAdd.team} size="sm" />
-                <span className="text-white text-sm font-medium">
-                  {selectedAdd.number != null && `#${selectedAdd.number} `}{selectedAdd.name}
-                </span>
-                <button onClick={() => setSelectedAdd(null)} className="ml-auto text-gray-400 hover:text-white">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            )}
-            {selectedAdd && selectedDrop && (
-              <svg className="w-5 h-5 text-gray-500 shrink-0 rotate-90 sm:rotate-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-              </svg>
-            )}
-            {selectedDrop && (
-              <div className="flex items-center gap-2 bg-red-900/30 border border-red-700 rounded-lg px-3 py-2 flex-1 w-full sm:w-auto">
-                <span className="text-red-400 text-xs font-bold uppercase">Drop</span>
-                <TeamLogo team={selectedDrop.team} size="sm" />
-                <span className="text-white text-sm font-medium">
-                  {selectedDrop.number != null && `#${selectedDrop.number} `}{selectedDrop.name}
-                </span>
-                <button onClick={() => setSelectedDrop(null)} className="ml-auto text-gray-400 hover:text-white">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            )}
-          </div>
-          {rosterFull && selectedAdd && !selectedDrop && (
-            <p className="text-yellow-400 text-xs mt-2">Your roster is full. Select a rider to drop below.</p>
-          )}
-          <div className="mt-3 flex gap-2">
-            <button
-              onClick={handleTransaction}
-              disabled={submitting || !!(rosterFull && selectedAdd && !selectedDrop)}
-              className="bg-white text-[#1A1A1A] hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-40"
-            >
-              {submitting ? "Processing..." : "Confirm Transaction"}
-            </button>
-            <button
-              onClick={() => { setSelectedAdd(null); setSelectedDrop(null); }}
-              className="text-gray-400 hover:text-white px-4 py-2 text-sm"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Status message */}
       {message && (
         <div className={`rounded-lg px-4 py-2 mb-4 text-sm font-medium ${
@@ -338,22 +300,132 @@ export default function FreeAgentsPage() {
         </div>
       )}
 
+      {/* Drop Selection Modal — Step 2: pick a rider to drop */}
+      {txnStep === "pick-drop" && selectedAdd && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={cancelTransaction}>
+          <div className="bg-[#F5F0EB] rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-[#1A1A1A] text-white p-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-bold text-lg">Select Rider to Drop</h3>
+                <button onClick={cancelTransaction} className="text-gray-400 hover:text-white">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex items-center gap-2 bg-green-900/30 border border-green-700 rounded-lg px-3 py-2">
+                <span className="text-green-400 text-xs font-bold uppercase">Adding</span>
+                <TeamLogo team={selectedAdd.team} size="sm" />
+                <span className="text-white text-sm font-medium">
+                  {selectedAdd.number != null && `#${selectedAdd.number} `}{selectedAdd.name}
+                </span>
+              </div>
+              <p className="text-gray-400 text-xs mt-2">Your roster is full. Select a rider to drop to make room.</p>
+            </div>
+            <div className="p-4 overflow-y-auto max-h-[50vh] space-y-4">
+              {(["450", "250E", "250W"] as const).map((cls) => {
+                const label = cls === "450" ? "450 Class" : cls === "250E" ? "250 East" : "250 West";
+                const riders = rosterByClass[cls];
+                if (riders.length === 0) return null;
+                return (
+                  <div key={cls}>
+                    <h4 className="text-xs font-bold text-[#8A8A8A] uppercase tracking-widest mb-2">{label}</h4>
+                    <div className="space-y-2">
+                      {riders.map((rider) => (
+                        <button
+                          key={rider.id}
+                          onClick={() => handleDropSelect(rider)}
+                          className="w-full rounded-lg p-3 border bg-[#E8E4DF] border-[#D4D0CB] hover:border-red-400 hover:bg-red-50 flex items-center gap-3 transition-colors text-left"
+                        >
+                          <TeamLogo team={rider.team} size="sm" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              {rider.number != null && <span className="text-[#1A1A1A] font-bold">#{rider.number}</span>}
+                              <span className="text-[#1A1A1A] font-medium">{rider.name}</span>
+                            </div>
+                            {rider.team && <p className="text-[#8A8A8A] text-xs mt-0.5 truncate">{rider.team}</p>}
+                          </div>
+                          <span className="text-red-500 text-sm font-medium shrink-0">Drop</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Transaction Modal — Step 3 */}
+      {txnStep === "confirm" && selectedAdd && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={cancelTransaction}>
+          <div className="bg-[#F5F0EB] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-[#1A1A1A] text-white p-4">
+              <h3 className="font-bold text-lg text-center">Confirm Transaction</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              {/* Add */}
+              <div className="flex items-center gap-3 bg-green-50 border border-green-300 rounded-lg p-3">
+                <span className="text-green-600 text-xs font-bold uppercase w-10">Add</span>
+                <TeamLogo team={selectedAdd.team} size="sm" />
+                <div>
+                  <div className="flex items-center gap-1">
+                    {selectedAdd.number != null && <span className="font-bold text-sm">#{selectedAdd.number}</span>}
+                    <span className="font-medium text-sm">{selectedAdd.name}</span>
+                  </div>
+                  {selectedAdd.team && <p className="text-[#8A8A8A] text-xs">{selectedAdd.team}</p>}
+                </div>
+              </div>
+
+              {/* Drop */}
+              {selectedDrop && (
+                <>
+                  <div className="flex justify-center">
+                    <svg className="w-5 h-5 text-[#8A8A8A]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                    </svg>
+                  </div>
+                  <div className="flex items-center gap-3 bg-red-50 border border-red-300 rounded-lg p-3">
+                    <span className="text-red-600 text-xs font-bold uppercase w-10">Drop</span>
+                    <TeamLogo team={selectedDrop.team} size="sm" />
+                    <div>
+                      <div className="flex items-center gap-1">
+                        {selectedDrop.number != null && <span className="font-bold text-sm">#{selectedDrop.number}</span>}
+                        <span className="font-medium text-sm">{selectedDrop.name}</span>
+                      </div>
+                      {selectedDrop.team && <p className="text-[#8A8A8A] text-xs">{selectedDrop.team}</p>}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handleTransaction}
+                  disabled={submitting}
+                  className="flex-1 bg-[#1A1A1A] hover:bg-[#333] text-white px-4 py-2.5 rounded-lg text-sm font-bold disabled:opacity-40"
+                >
+                  {submitting ? "Processing..." : "Confirm"}
+                </button>
+                <button
+                  onClick={cancelTransaction}
+                  className="flex-1 bg-[#EBE7E2] hover:bg-[#D4D0CB] text-[#6B6B6B] px-4 py-2.5 rounded-lg text-sm font-medium"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex gap-1 bg-[#EBE7E2] rounded-lg p-1 mb-6">
         {[
-          { key: "pool" as const, label: "Free Agents", count: data.freeAgents.length, href: null },
-          { key: "roster" as const, label: "My Roster", count: data.myRoster.length, href: null },
-          { key: "log" as const, label: "Activity", count: data.transactions.length, href: null },
-        ].map(({ key, label, count, href }) => (
-          href ? (
-            <Link
-              key={key}
-              href={href}
-              className="flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors text-center text-[#6B6B6B] hover:text-[#1A1A1A]"
-            >
-              {label} <span className="text-xs opacity-60">({count})</span>
-            </Link>
-          ) : (
+          { key: "pool" as const, label: "Free Agents", count: data.freeAgents.length },
+          { key: "log" as const, label: "Activity", count: data.transactions.length },
+        ].map(({ key, label, count }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -365,7 +437,6 @@ export default function FreeAgentsPage() {
           >
             {label} <span className="text-xs opacity-60">({count})</span>
           </button>
-          )
         ))}
       </div>
 
@@ -430,7 +501,7 @@ export default function FreeAgentsPage() {
                     </div>
                     {!rosterLocked && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); setSelectedAdd(isSelected ? null : rider); }}
+                        onClick={(e) => { e.stopPropagation(); handleAddClick(rider); }}
                         className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                           isSelected
                             ? "bg-green-500 text-white"
@@ -449,69 +520,6 @@ export default function FreeAgentsPage() {
             )}
           </div>
         </>
-      )}
-
-      {/* My Roster Tab */}
-      {tab === "roster" && (
-        <div className="space-y-6">
-          {(["450", "250E", "250W"] as const).map((cls) => {
-            const label = cls === "450" ? "450 Class" : cls === "250E" ? "250 East" : "250 West";
-            const riders = rosterByClass[cls];
-            return (
-              <div key={cls}>
-                <h3 className="text-sm font-semibold text-[#8A8A8A] uppercase tracking-wide mb-2">{label}</h3>
-                {riders.length === 0 ? (
-                  <p className="text-[#A0A0A0] text-xs italic pl-1">No riders in this class</p>
-                ) : (
-                  <div className="space-y-2">
-                    {riders.map((rider) => {
-                      const isSelected = selectedDrop?.id === rider.id;
-                      return (
-                        <div
-                          key={rider.id}
-                          className={`rounded-lg p-3 border flex items-center justify-between transition-colors cursor-pointer ${
-                            isSelected
-                              ? "bg-red-50 border-red-400"
-                              : "bg-[#E8E4DF] border-[#D4D0CB] hover:border-[#8A8A8A]"
-                          }`}
-                          onClick={() => setSelectedRiderForStats(rider)}
-                        >
-                          <div className="flex items-center gap-3">
-                            <TeamLogo team={rider.team} size="sm" />
-                            <div>
-                              <div className="flex items-center gap-2">
-                                {rider.number != null && (
-                                  <span className="text-[#1A1A1A] font-bold">#{rider.number}</span>
-                                )}
-                                <span className="text-[#1A1A1A] font-medium">{rider.name}</span>
-                                {rider.status === "out" && (
-                                  <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">OUT</span>
-                                )}
-                              </div>
-                              {rider.team && <p className="text-[#8A8A8A] text-xs mt-0.5">{rider.team}</p>}
-                            </div>
-                          </div>
-                          {!rosterLocked && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setSelectedDrop(isSelected ? null : rider); }}
-                              className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                                isSelected
-                                  ? "bg-red-500 text-white"
-                                  : "bg-[#EBE7E2] hover:bg-red-100 hover:text-red-700 text-[#6B6B6B] border border-[#D4D0CB]"
-                              }`}
-                            >
-                              {isSelected ? "Dropping" : "Drop"}
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
       )}
 
       {/* Activity Log Tab */}
