@@ -266,8 +266,25 @@ export async function GET(req: NextRequest) {
         const hasMainResults = eventRaces.some(
           (r) => r.type === "main_450" || r.type === "main_250"
         );
+        const hasOverallResults = eventRaces.some((r) => r.isOverall);
+        // Detect Triple Crown: multiple mains per class (e.g. "Main Event #1", "#2", "#3")
+        const mainCount450 = eventRaces.filter((r) => r.type === "main_450").length;
+        const mainCount250 = eventRaces.filter((r) => r.type === "main_250").length;
+        const looksLikeTripleCrown = mainCount450 > 1 || mainCount250 > 1;
 
-        if (!hasMainResults) {
+        // For Triple Crown: wait for overall results before importing
+        if (looksLikeTripleCrown && !hasOverallResults) {
+          results.push({
+            raceId: race.id,
+            raceName: race.name,
+            status: "waiting-triple-crown-overall",
+            resultsImported: 0,
+            bonusCount: 0,
+          });
+          continue;
+        }
+
+        if (!hasMainResults && !hasOverallResults) {
           // Results not posted yet — skip this race, try again next cron run
           results.push({
             raceId: race.id,
@@ -280,7 +297,10 @@ export async function GET(req: NextRequest) {
         }
 
         // Process results — same logic as manual import
+        // Track overall results separately (used for Triple Crown final standings)
         const mainResults: { type: string; results: string[] }[] = [];
+        const overallResults: { type: string; results: string[] }[] = [];
+        const individualMains: { type: string; results: string[]; name: string }[] = [];
         const bonuses: { riderId: number; type: string }[] = [];
 
         for (const eventRace of eventRaces) {
@@ -289,6 +309,9 @@ export async function GET(req: NextRequest) {
 
           if (eventRace.isOverall) {
             finishOrder = await fetchOverallResults(eventRace.url);
+            if (finishOrder.length > 0) {
+              overallResults.push({ type: eventRace.type, results: finishOrder });
+            }
           } else {
             const result = await fetchRaceResults(eventRace.url, race.name);
             finishOrder = result.names;
@@ -314,14 +337,17 @@ export async function GET(req: NextRequest) {
           if (finishOrder.length === 0) continue;
 
           if (eventRace.type === "main_450" || eventRace.type === "main_250") {
-            mainResults.push({ type: eventRace.type, results: finishOrder });
+            individualMains.push({ type: eventRace.type, results: finishOrder, name: eventRace.name });
 
-            // Auto-detect holeshot from main event
+            // Auto-detect holeshot from each main (Triple Crown has 3 per class)
             if (holeshotRider) {
               const hsRider = findRider(holeshotRider);
               if (hsRider) {
                 const classPrefix = eventRace.type === "main_450" ? "450" : "250";
-                bonuses.push({ riderId: hsRider.id, type: `holeshot_${classPrefix}` });
+                // Use unique bonus type for multiple holeshots (e.g. holeshot_450, holeshot_450_2, holeshot_450_3)
+                const existingCount = bonuses.filter((b) => b.type.startsWith(`holeshot_${classPrefix}`)).length;
+                const suffix = existingCount > 0 ? `_${existingCount + 1}` : "";
+                bonuses.push({ riderId: hsRider.id, type: `holeshot_${classPrefix}${suffix}` });
               }
             }
           }
@@ -343,6 +369,21 @@ export async function GET(req: NextRequest) {
               const classPrefix = eventRace.type === "lcq_450" ? "450" : "250";
               bonuses.push({ riderId: winner.id, type: `lcq_${classPrefix}` });
             }
+          }
+        }
+
+        // Triple Crown: if overall results exist, use those for scoring
+        // Otherwise use individual main results (normal race format)
+        const isTripleCrown = individualMains.some((m) => m.name.includes("#1") || m.name.includes("#2") || m.name.includes("#3"));
+        if (isTripleCrown && overallResults.length > 0) {
+          // Use overall standings for championship points
+          for (const overall of overallResults) {
+            mainResults.push(overall);
+          }
+        } else {
+          // Normal race — use individual main results
+          for (const main of individualMains) {
+            mainResults.push(main);
           }
         }
 
