@@ -19,8 +19,9 @@ function classifyRace(name: string): ParsedRace["type"] {
   if (n.includes("450") && n.includes("heat")) return "heat_450";
   if (n.includes("250") && n.includes("lcq")) return "lcq_250";
   if (n.includes("450") && n.includes("lcq")) return "lcq_450";
-  if (n.includes("250") && (n.includes("main") || n.includes("overall"))) return "main_250";
-  if (n.includes("450") && (n.includes("main") || n.includes("overall"))) return "main_450";
+  // Triple Crown mains are named "Race #1", "Race #2", "Race #3"
+  if (n.includes("250") && (n.includes("main") || n.includes("overall") || /\brace\s*#?\d/i.test(name))) return "main_250";
+  if (n.includes("450") && (n.includes("main") || n.includes("overall") || /\brace\s*#?\d/i.test(name))) return "main_450";
   return "other";
 }
 
@@ -374,7 +375,7 @@ export async function GET(req: NextRequest) {
 
         // Triple Crown: if overall results exist, use those for scoring
         // Otherwise use individual main results (normal race format)
-        const isTripleCrown = individualMains.some((m) => m.name.includes("#1") || m.name.includes("#2") || m.name.includes("#3"));
+        const isTripleCrown = mainCount450 > 1 || mainCount250 > 1 || individualMains.some((m) => m.name.includes("#1") || m.name.includes("#2") || m.name.includes("#3"));
         if (isTripleCrown && overallResults.length > 0) {
           // Use overall standings for championship points
           for (const overall of overallResults) {
