@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     const { data: user } = await supabase
       .from("app_users")
       .select("id, password_hash, is_admin")
-      .eq("username", username)
+      .ilike("username", username)
       .maybeSingle();
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
