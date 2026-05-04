@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { get250Region } from "@/lib/race-region";
+import { get250Region, isTripleCrown } from "@/lib/race-region";
+import { TripleCrownBadge } from "@/components/FormatBadge";
 
 interface Race {
   id: number;
@@ -39,20 +40,6 @@ function splitLocation(location: string | null) {
   return { venue: null, city: location };
 }
 
-const TRIPLE_CROWN_ROUNDS = new Set([4, 9, 14]);
-
-function TripleCrownBadge({ faded }: { faded?: boolean }) {
-  return (
-    <span className={`bg-amber-100 text-amber-700 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${faded ? "opacity-60" : ""}`}>
-      <svg className="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M8 1l2.5 3.5L14 3l-1.5 5H3.5L2 3l3.5 1.5L8 1z" />
-        <rect x="3" y="9" width="10" height="2.5" rx="0.5" />
-        <text x="8" y="8" textAnchor="middle" fontSize="5" fontWeight="bold" fill="white">3</text>
-      </svg>
-      Triple Crown
-    </span>
-  );
-}
 
 function RegionBadge({ region, faded }: { region: "west" | "east" | "showdown"; faded?: boolean }) {
   const styles = {
@@ -157,7 +144,7 @@ export default function SchedulePage() {
                 {get250Region(nextRace.round_number) && (
                   <RegionBadge region={get250Region(nextRace.round_number)!} />
                 )}
-                {TRIPLE_CROWN_ROUNDS.has(nextRace.round_number) && (
+                {isTripleCrown(nextRace.round_number) && (
                   <TripleCrownBadge />
                 )}
               </div>
@@ -221,7 +208,7 @@ export default function SchedulePage() {
                   {get250Region(race.round_number) && (
                     <RegionBadge region={get250Region(race.round_number)!} faded={isCompleted} />
                   )}
-                  {TRIPLE_CROWN_ROUNDS.has(race.round_number) && (
+                  {isTripleCrown(race.round_number) && (
                     <TripleCrownBadge faded={isCompleted} />
                   )}
                 </div>

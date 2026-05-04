@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import TeamLogo from "@/components/TeamLogo";
-import { get250Region } from "@/lib/race-region";
+import { get250Region, isTripleCrown } from "@/lib/race-region";
+import { TripleCrownBadge, ShowdownBadge } from "@/components/FormatBadge";
 
 interface Rider {
   id: number;
@@ -186,10 +187,12 @@ export default function LineupPage() {
           <option value="">Select a race...</option>
           {races.map((race) => {
             const started = race.race_time && new Date(race.race_time) <= new Date();
+            const tc = isTripleCrown(race.round_number);
             return (
               <option key={race.id} value={race.id}>
                 {race.round_number && `R${race.round_number}: `}{race.name}
                 {regionLabel(race.round_number)}
+                {tc ? " — Triple Crown" : ""}
                 {race.status === "completed" ? " (Completed)" : started ? " (Locked)" : ""}
               </option>
             );
@@ -197,21 +200,27 @@ export default function LineupPage() {
         </select>
       </div>
 
-      {selectedRace && raceRegion && (
-        <div className="mb-4 flex items-center gap-2">
-          {raceRegion === "west" && (
-            <span className="bg-blue-100 text-blue-700 text-xs font-bold uppercase px-2.5 py-1 rounded-full">250 West Only</span>
+      {selectedRace && (raceRegion || isTripleCrown(selectedRaceObj?.round_number ?? null)) && (
+        <div className="mb-4 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {raceRegion === "west" && (
+              <span className="bg-blue-100 text-blue-700 text-xs font-bold uppercase px-2.5 py-1 rounded-full">250 West Only</span>
+            )}
+            {raceRegion === "east" && (
+              <span className="bg-red-100 text-red-700 text-xs font-bold uppercase px-2.5 py-1 rounded-full">250 East Only</span>
+            )}
+            {raceRegion === "showdown" && <ShowdownBadge />}
+            {isTripleCrown(selectedRaceObj?.round_number ?? null) && <TripleCrownBadge />}
+          </div>
+          {raceRegion && raceRegion !== "showdown" && (
+            <p className="text-[#8A8A8A] text-xs">
+              {raceRegion === "west" ? "250 East riders are not racing this round." : "250 West riders are not racing this round."}
+            </p>
           )}
-          {raceRegion === "east" && (
-            <span className="bg-red-100 text-red-700 text-xs font-bold uppercase px-2.5 py-1 rounded-full">250 East Only</span>
-          )}
-          {raceRegion === "showdown" && (
-            <span className="bg-purple-100 text-purple-700 text-xs font-bold uppercase px-2.5 py-1 rounded-full">E/W Showdown — Both 250 Classes</span>
-          )}
-          {raceRegion !== "showdown" && (
-            <span className="text-[#8A8A8A] text-xs">
-              {raceRegion === "west" ? "250 East riders are not racing this round" : "250 West riders are not racing this round"}
-            </span>
+          {isTripleCrown(selectedRaceObj?.round_number ?? null) && (
+            <p className="text-amber-700 text-xs">
+              Triple Crown format — 3 main events. Championship points are based on combined finish, not individual mains.
+            </p>
           )}
         </div>
       )}

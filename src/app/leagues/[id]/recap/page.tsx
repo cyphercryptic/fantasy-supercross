@@ -5,6 +5,7 @@ import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import TeamLogo from "@/components/TeamLogo";
 import { BIKE_BRANDS, parseBikeConfig } from "@/components/MotoBike";
+import { TripleCrownBadge, ShowdownBadge } from "@/components/FormatBadge";
 
 interface RiderInfo {
   id: number;
@@ -99,27 +100,7 @@ function PositionBadge({ position }: { position: number }) {
   );
 }
 
-function FormatBadge({ format }: { format: "triple_crown" | "showdown" | "regular" }) {
-  if (format === "triple_crown") {
-    return (
-      <span className="bg-amber-100 text-amber-700 text-[10px] font-bold uppercase px-2 py-1 rounded-full inline-flex items-center gap-1">
-        <svg className="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M8 1l2.5 3.5L14 3l-1.5 5H3.5L2 3l3.5 1.5L8 1z" />
-          <rect x="3" y="9" width="10" height="2.5" rx="0.5" />
-        </svg>
-        Triple Crown
-      </span>
-    );
-  }
-  if (format === "showdown") {
-    return (
-      <span className="bg-purple-100 text-purple-700 text-[10px] font-bold uppercase px-2 py-1 rounded-full">
-        East/West Showdown
-      </span>
-    );
-  }
-  return null;
-}
+// FormatBadge moved to src/components/FormatBadge.tsx
 
 function formatRaceDate(dateStr: string | null) {
   if (!dateStr) return "";
@@ -268,7 +249,8 @@ export default function RecapPage() {
             {race.location && <p className="text-gray-400 text-sm mt-1 truncate">{race.location}</p>}
             <p className="text-gray-300 text-xs mt-1">{formatRaceDate(race.date)}</p>
           </div>
-          <FormatBadge format={race.format} />
+          {race.format === "triple_crown" && <TripleCrownBadge />}
+          {race.format === "showdown" && <ShowdownBadge />}
         </div>
 
         {/* Prev/Next nav */}
