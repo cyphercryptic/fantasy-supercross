@@ -7,10 +7,6 @@
     {
       "path": "/api/cron/injury-report",
       "schedule": "0 12 * * *"
-    },
-    {
-      "path": "/api/cron/news-sync",
-      "schedule": "0 18 * * *"
     }
   ]
 }

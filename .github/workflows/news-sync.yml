@@ -1,9 +1,11 @@
 name: News Sync
 
 on:
-  # Pull Racer X RSS every hour
   schedule:
-    - cron: "5 * * * *"
+    # Once daily at 18:05 UTC (1 PM ET) Sunday through Friday — no racing those days
+    - cron: "5 18 * * 0-5"
+    # Hourly all day Saturday (race day) so injury news drops in fast
+    - cron: "5 * * * 6"
   workflow_dispatch:
 
 jobs:
