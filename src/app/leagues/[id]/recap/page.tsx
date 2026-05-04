@@ -127,22 +127,6 @@ function formatRaceDate(dateStr: string | null) {
   return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 }
 
-function OwnerBadge({ owner }: { owner: { color: string; username: string } | null }) {
-  if (!owner) return null;
-  return (
-    <span
-      className="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded text-white shrink-0"
-      style={{ backgroundColor: owner.color }}
-      title={`${owner.username}'s rider`}
-    >
-      <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-      </svg>
-      {owner.username}
-    </span>
-  );
-}
-
 function ResultRow({ entry, owner }: { entry: ResultEntry; owner: { color: string; username: string } | null }) {
   if (!entry.rider) return null;
   const ownedStyle = owner
@@ -152,6 +136,7 @@ function ResultRow({ entry, owner }: { entry: ResultEntry; owner: { color: strin
     <div
       className="flex items-center gap-3 bg-[#E8E4DF] border border-[#D4D0CB] rounded-lg px-3 py-2.5 transition-all"
       style={ownedStyle}
+      title={owner ? `${owner.username}'s rider` : undefined}
     >
       <PositionBadge position={entry.position} />
       <TeamLogo team={entry.rider.team} size="sm" />
@@ -159,7 +144,6 @@ function ResultRow({ entry, owner }: { entry: ResultEntry; owner: { color: strin
         <div className="flex items-center gap-1.5 flex-wrap">
           {entry.rider.number != null && <span className="text-[#1A1A1A] font-bold text-sm">#{entry.rider.number}</span>}
           <span className="text-[#1A1A1A] font-medium text-sm truncate">{entry.rider.name}</span>
-          <OwnerBadge owner={owner} />
         </div>
         {entry.rider.team && <p className="text-[#8A8A8A] text-xs truncate">{entry.rider.team}</p>}
       </div>
@@ -177,6 +161,7 @@ function BonusChip({ label, rider, owner }: { label: string; rider: BonusRider |
     <div
       className="flex items-center gap-2 bg-[#E8E4DF] border border-[#D4D0CB] rounded-lg px-3 py-2"
       style={ownedStyle}
+      title={owner ? `${owner.username}'s rider` : undefined}
     >
       <span className="text-[10px] font-bold uppercase text-[#8A8A8A] tracking-wide w-14 shrink-0">{label}</span>
       <TeamLogo team={rider.team} size="sm" />
@@ -184,7 +169,6 @@ function BonusChip({ label, rider, owner }: { label: string; rider: BonusRider |
         <div className="flex items-center gap-1.5 flex-wrap">
           {rider.number != null && <span className="text-[#1A1A1A] font-bold text-xs">#{rider.number}</span>}
           <span className="text-[#1A1A1A] text-sm truncate">{rider.name}</span>
-          <OwnerBadge owner={owner} />
         </div>
       </div>
     </div>
