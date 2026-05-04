@@ -227,9 +227,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (addRiderId) {
-    await supabase.from("league_rosters").insert({
+    const { error: addErr } = await supabase.from("league_rosters").insert({
       league_id: Number(id), user_id: user.id, rider_id: addRiderId,
     });
+    if (addErr) {
+      // Likely caused by another manager adding the same rider between our
+      // availability check above and this insert (race condition).
+      // 23505 = unique_violation on (league_id, rider_id).
+      if (addErr.code === "23505") {
+        // Roll back the drop we already executed — restore the rider to roster
+        if (dropRiderId) {
+          await supabase.from("league_rosters").insert({
+            league_id: Number(id), user_id: user.id, rider_id: dropRiderId,
+          });
+        }
+        return NextResponse.json(
+          { error: "Another manager just claimed that rider. Refresh and try again.", code: "rider_just_claimed" },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json({ error: "Failed to add rider: " + addErr.message }, { status: 500 });
+    }
   }
 
   // Log the transaction
