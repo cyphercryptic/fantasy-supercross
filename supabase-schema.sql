@@ -27,8 +27,11 @@ CREATE TABLE races (
   location TEXT,
   status TEXT DEFAULT 'upcoming',
   race_time TEXT,
-  event_id TEXT
+  event_id TEXT,
+  series TEXT NOT NULL DEFAULT 'sx'        -- 'sx' | 'mx' | 'smx'
 );
+CREATE INDEX races_series_status_idx ON races(series, status);
+CREATE INDEX races_series_round_idx ON races(series, round_number);
 
 CREATE TABLE race_results (
   id SERIAL PRIMARY KEY,
@@ -68,8 +71,25 @@ CREATE TABLE leagues (
   draft_pick_timer INTEGER DEFAULT 60,
   last_pick_at TIMESTAMPTZ,
   draft_auto_users JSONB DEFAULT '[]'::jsonb,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  series TEXT NOT NULL DEFAULT 'sx'        -- 'sx' | 'mx' | 'smx'
 );
+
+-- Per-series rider data (riders may change number/team/class between seasons)
+-- The riders table stays as the canonical "identity" record. This table layers
+-- per-series customization on top.
+CREATE TABLE rider_series (
+  id SERIAL PRIMARY KEY,
+  rider_id INTEGER NOT NULL REFERENCES riders(id) ON DELETE CASCADE,
+  series TEXT NOT NULL,
+  class TEXT NOT NULL,
+  number INTEGER,
+  team TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  UNIQUE (rider_id, series)
+);
+CREATE INDEX rider_series_series_idx ON rider_series(series);
+CREATE INDEX rider_series_rider_idx ON rider_series(rider_id);
 
 CREATE TABLE draft_picks (
   id SERIAL PRIMARY KEY,

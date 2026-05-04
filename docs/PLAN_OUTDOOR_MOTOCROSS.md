@@ -1,94 +1,115 @@
 # Pro Motocross (Outdoors) Expansion — Implementation Plan
 
-**Status:** Planned. Do not implement until after the 2026 SX season ends (Salt Lake City, May 9, 2026).
-
-This doc captures everything we need to add Pro Motocross support to the app
-without breaking existing Supercross functionality.
-
----
-
-## Open questions to resolve before starting
-
-These came up while scoping. Defaults are noted but should be confirmed before
-the work starts.
-
-1. **One league or two?**
-   - **Default:** Separate league per series. Cleaner standings, allows different
-     drafts, mirrors how AMA actually treats the seasons.
-   - Alternative: Single league with combined SX + MX standings (SMX-style).
-
-2. **Re-draft for outdoors?**
-   - **Default:** Yes. Outdoor rosters always change — some SX-only riders sit
-     out, some MX specialists return, rookies join. A new draft keeps it fair.
-
-3. **Scoring**
-   - **Default:** Reuse existing scoring table (10-8-7-6-5-4-4-3-3-3-2-2-2-2-1×8).
-     Treat the official "overall" as the result, same as Triple Crown logic.
-   - Each moto has its own holeshot — both should award bonuses.
-
-4. **SMX playoffs (Aug 30 / Sep 6 / Sep 13, 2026)**
-   - **Default:** Treat as a third "series" (`smx`) with its own 3-round
-     mini-season after MX ends. Or skip and revisit next year.
-
-5. **Number plates**
-   - SX riders carry SX numbers (1, 2, 3...), MX riders carry MX career numbers.
-     For most pros these match; some differ. Decide whether to track per-series
-     numbers or use one canonical number per rider.
+**Status:** In progress (started 2026-05-04 evening). Decisions locked, building
+behind the scenes while SX season finishes. **No SX data will be deleted or
+modified** — all changes are additive.
 
 ---
 
-## Format differences cheat sheet
+## Locked decisions
+
+1. **Separate league per series.** Existing SX league stays as-is. A new
+   `series='mx'` league will be created when MX starts. Same user accounts can
+   join both.
+2. **Re-draft for outdoors.** Fresh rosters per season.
+3. **Same scoring table** (10-8-7-6-5-4-4-3-3-3-2-2-2-2-1×8). Points come from
+   the **official overall finish** (combined motos), not from individual motos.
+4. **Bonuses (4 per class per round)**:
+   - **Holeshot Moto 1** (1 pt)
+   - **Holeshot Moto 2** (1 pt)
+   - **Moto 1 winner** (1 pt)
+   - **Moto 2 winner** (1 pt)
+5. **Class structure:** 450 MX and 250 MX only — no East/West split. All 250
+   riders race together every round; all 450 riders race together. 4 motos per
+   race day.
+6. **Riders can change** numbers, teams, AND class between SX and MX seasons.
+   Some 250 riders graduate to 450. We track everything per-series via a
+   `rider_series` table; the existing `riders` table stays untouched.
+
+---
+
+## Format cheat sheet
 
 | | Supercross | Pro Motocross | SMX Playoffs |
 |---|---|---|---|
 | Season | Jan – early May | mid-May – late Aug | late Aug – mid Sep |
 | Rounds | 17 | 11 | 3 |
 | Race format | 1 main event | 2 motos, combined finish = race result | Triple Crown style (3 mains) |
-| Classes | 450 SX, 250 SX East, 250 SX West | 450 MX, 250 MX (no E/W split) | Combined 450 SMX, 250 SMX |
+| Classes | 450 SX, 250 SX East, 250 SX West | **450 MX, 250 MX (no E/W)** | Combined 450 SMX, 250 SMX |
 | Heats | Yes | No (gates straight to motos) | No |
-| LCQ | Yes | No (motos are gated by qualifying time) | Yes |
-| Holeshots | 1 per class per main | 2 per class per round (one per moto) | 1 per class per main × 3 mains |
+| LCQ | Yes | No (motos gated by qualifying) | Yes |
+| Bonuses per class per round | 1 holeshot + 2 heat winners + 1 LCQ winner = 4 | **2 holeshots + 2 moto winners = 4** | 3 holeshots (Triple Crown) |
 
 ---
 
-## Phase 1 — Schema & data model
+## Phase 1 — Schema & migrations
 
-**Goal:** Add a `series` dimension to existing tables without breaking SX.
+**Goal:** Add a `series` dimension. Make every existing query series-aware
+without breaking SX. Riders table stays untouched.
 
-### Migrations
+### SQL migration (`migrations/2026-05-04b_outdoor_motocross_schema.sql`)
 
 ```sql
--- New column on races; default 'sx' so existing records stay valid
-ALTER TABLE races ADD COLUMN series TEXT NOT NULL DEFAULT 'sx';
-CREATE INDEX races_series_status_idx ON races(series, status);
+BEGIN;
 
--- Same on leagues so a league is locked to a series
-ALTER TABLE leagues ADD COLUMN series TEXT NOT NULL DEFAULT 'sx';
+-- 1. Per-series flag on races. Default 'sx' so all existing rows stay valid.
+ALTER TABLE races ADD COLUMN IF NOT EXISTS series TEXT NOT NULL DEFAULT 'sx';
+CREATE INDEX IF NOT EXISTS races_series_status_idx ON races(series, status);
+CREATE INDEX IF NOT EXISTS races_series_round_idx ON races(series, round_number);
 
--- Riders may participate in multiple series with different classes
-CREATE TABLE rider_series (
+-- 2. Per-series flag on leagues. Default 'sx' for existing leagues.
+ALTER TABLE leagues ADD COLUMN IF NOT EXISTS series TEXT NOT NULL DEFAULT 'sx';
+
+-- 3. Per-series rider data (number, team, class, status all may differ between SX and MX)
+CREATE TABLE IF NOT EXISTS rider_series (
+  id SERIAL PRIMARY KEY,
   rider_id INTEGER NOT NULL REFERENCES riders(id) ON DELETE CASCADE,
-  series TEXT NOT NULL,           -- 'sx' | 'mx' | 'smx'
-  class TEXT NOT NULL,            -- '450', '450MX', '250E', '250W', '250MX', etc
-  status TEXT DEFAULT 'active',   -- per-series status (Q/OUT/active)
-  PRIMARY KEY (rider_id, series)
+  series TEXT NOT NULL,                    -- 'sx' | 'mx' | 'smx'
+  class TEXT NOT NULL,                     -- '450', '250', '250E', '250W', '450MX', '250MX'
+  number INTEGER,
+  team TEXT,
+  status TEXT NOT NULL DEFAULT 'active',   -- 'active' | 'questionable' | 'out'
+  UNIQUE (rider_id, series)
 );
+CREATE INDEX IF NOT EXISTS rider_series_series_idx ON rider_series(series);
 
--- Backfill existing rider rows into rider_series for SX
-INSERT INTO rider_series (rider_id, series, class, status)
-SELECT id, 'sx', class, status FROM riders;
+-- 4. Backfill rider_series from existing riders table for SX
+INSERT INTO rider_series (rider_id, series, class, number, team, status)
+SELECT id, 'sx', class, number, team, status
+FROM riders
+ON CONFLICT (rider_id, series) DO NOTHING;
+
+-- 5. Bonus type expansion (additive — no schema change needed since bonus_type is TEXT)
+-- New types we'll use for MX:
+--   'moto1_winner_450', 'moto2_winner_450', 'holeshot_moto1_450', 'holeshot_moto2_450'
+--   'moto1_winner_250', 'moto2_winner_250', 'holeshot_moto1_250', 'holeshot_moto2_250'
+
+COMMIT;
 ```
 
-### Code changes (data layer)
+### Code changes — make queries series-aware
 
-- Every existing query that touches `races` adds `.eq("series", series)` based
-  on the league's series.
-- Standings/leaderboard scoped to the league's series (already implicit since
-  the league is series-locked).
-- `riders.class` and `riders.status` are deprecated in favor of `rider_series`
-  rows. Keep the columns for now to not break SX mid-implementation.
+Every query that touches `races` or `riders` needs to know which series the
+current league belongs to. Two approaches:
 
-### New 11 MX races to insert (2026 schedule)
+- **For SX-only data (existing):** existing code keeps working because the new
+  `series` column defaults to `'sx'` everywhere. No code change required.
+- **For MX league pages:** each league page resolves `league.series` from DB
+  and passes it down. Race/rider queries filter by series.
+
+Concrete file-by-file changes (Phase 1 only — UI comes in later phases):
+
+| File | Change |
+|---|---|
+| `src/app/api/races/route.ts` | Accept optional `?series=` query param, default to caller's league series if known. |
+| `src/app/api/leagues/[id]/team/route.ts` | Filter `riders` joins through `rider_series` to get the per-series number/team/class. |
+| `src/app/api/leagues/[id]/free-agents/route.ts` | Same — show riders in this league's series only, with their series-specific numbers. |
+| `src/app/api/leagues/[id]/lineup/route.ts` | Validate against series-specific class names. |
+| `src/lib/race-region.ts` | `get250Region` returns null for non-SX series (MX has no East/West). |
+
+### MX schedule (11 rounds — 2026)
+
+To insert at start of MX season, NOT during Phase 1:
 
 | Round | Name | Date | Track |
 |---|---|---|---|
@@ -104,29 +125,33 @@ SELECT id, 'sx', class, status FROM riders;
 | 10 | Ironman | Aug 22 | Crawfordsville, IN |
 | 11 | Glen Helen | Aug 29 | San Bernardino, CA |
 
-Confirm exact dates and venue order against AMA when we start.
+Confirm exact dates against AMA closer to season.
 
 ---
 
-## Phase 2 — Rider classes for MX
+## Phase 2 — Rider classes & numbers for MX
 
-Pull the official MX entry list (or use rider announcements) to populate
-`rider_series` for the MX season.
+Build a one-time admin script that:
 
-- 450 MX class roster: ~40 riders typically
-- 250 MX class roster: ~40 riders typically
-- A handful race both classes; we treat them as one entry per series (e.g.,
-  Levi Kitchen does 250 MX but does some 450 SX rounds too)
+1. Scrapes the official MX entry list for round 1 (Fox Raceway).
+2. For each rider on the entry list:
+   - Match against existing `riders` table by name (using existing alias system).
+   - Insert/update a `rider_series` row with `series='mx'`, the MX class
+     (`450MX` or `250MX`), the MX number, and the MX team.
+3. Riders not on the MX entry list get NO `rider_series` row for MX → won't
+   appear as draftable for the MX league.
+4. Brand-new riders not in our DB yet get inserted into `riders` first, then
+   into `rider_series`.
 
-Build a one-time admin script (similar to how we updated team names from
-Racer X) that scrapes the MX entry lists and inserts/updates `rider_series`.
+We'll run this script once before the MX league draft.
 
 ---
 
 ## Phase 3 — Scraping MX results
 
-The supercrosslive.com results system also covers Pro Motocross under the
-same domain (or possibly `results.promotocross.com` — to be verified).
+The supercrosslive event_id system covers both SX and MX. URL patterns may
+differ slightly (`promotocross.com` vs `supercrosslive.com`). To verify when
+we get there.
 
 ### What to scrape per MX round
 
@@ -135,81 +160,98 @@ For each class:
 - **Moto 2** → finishing order + holeshot
 - **Overall** → combined finish (the official result we score)
 
-This is exactly the Triple Crown scraping pattern we already built. We can
-reuse `fetchOverallResults`, `fetchRaceResults`, and the existing holeshot
-detection. The main work is:
+Reuse existing helpers (`fetchOverallResults`, `fetchRaceResults`, holeshot
+detection). Adapt:
 
-1. Find the MX event_id for each round.
-2. Map race links by name pattern: `/250 Moto #1/`, `/450 Moto #2/`,
-   `/250 Overall Results/`.
-3. Adapt `classifyRace` to recognize "Moto" as a main-event marker.
-4. Save 2 holeshot bonuses per class instead of 1 (we already support N
-   holeshots from Triple Crown work).
+1. `classifyRace` to recognize "Moto" as a main-event marker for MX.
+2. Bonus generation:
+   - Holeshot Moto 1 → `holeshot_moto1_<class>`
+   - Holeshot Moto 2 → `holeshot_moto2_<class>`
+   - Moto 1 winner (P1 of that moto) → `moto1_winner_<class>`
+   - Moto 2 winner (P1 of that moto) → `moto2_winner_<class>`
+3. The `overall` link is what scores positions — same as Triple Crown.
 
 ### Cron schedule for MX
 
-MX races are typically Saturday afternoons. Update GitHub Actions:
-- Existing race-day-import cron schedule already covers Saturday — extend the
-  hours to cover earlier MX start times (~1 PM ET first moto).
-- Same news-sync schedule continues.
-- Same daily Vercel auto-import + injury-report continues.
+MX races run Saturday afternoons (~1 PM ET first moto, ~3:30 PM ET second
+moto, overall posted shortly after). Update GitHub Actions:
+
+- Existing race-day-import already runs Saturday — extend hours to cover
+  earlier MX start (e.g. start polling at 17:00 UTC = 1 PM ET).
+- News-sync schedule continues unchanged.
 
 ---
 
 ## Phase 4 — UI changes
 
 ### Schedule page
-- Tab or filter for SX / MX / SMX.
-- Schedule grouped by series.
-- Format badges: add a "2-Moto" badge, distinct from Triple Crown.
+- Section by series (SX completed, MX upcoming).
+- Race format badge: add "2-Moto" badge for MX rounds.
+- Filter UI: "All / SX / MX / SMX".
+
+### League dashboard
+- League header shows series badge (e.g. "Bar 9 Fantasy MX").
 
 ### Lineup page
-- Class options change based on series:
-  - SX league → 450, 250E, 250W
-  - MX league → 450MX, 250MX
-- Lineup composition fields on the league config drive what's required.
+- Class options driven by league.series:
+  - SX → 450, 250E, 250W
+  - MX → 450MX, 250MX
+- Showdown/Triple Crown badges only for SX rounds.
+- "2-Moto" badge for MX rounds.
 
 ### Recap page
-- For MX races, show overall + both motos.
-- Holeshot section displays "Moto 1 holeshot" / "Moto 2 holeshot" per class.
-- Format badge "2-Moto" on header.
+- For MX races, show: overall standings + Moto 1 + Moto 2 (collapsible).
+- Holeshot section: 2 holeshots per class labeled Moto 1 / Moto 2.
+- Moto-winner bonus section.
 
 ### Season recap
-- Already series-scoped via league; no changes needed beyond making sure
-  the data queries respect series.
+- Already series-scoped via league. Just confirm queries respect series.
 
 ### Team page (rider browser)
-- Filter riders by current league's series.
-- Status badges (Q/OUT) read from `rider_series.status` not `riders.status`.
+- Filter riders by current league.series.
+- Numbers/teams pulled from `rider_series` for the league's series.
+- Status badges read from `rider_series.status`.
 
 ---
 
-## Phase 5 — Migration of existing user
+## Phase 5 — User migration when MX starts
 
-When MX season starts, the user (and their dad) will:
+When MX season begins:
 
-1. Create a new league with `series = 'mx'`.
-2. Use the SAME existing app accounts (no signup needed).
-3. Re-pick brand colors (could persist across leagues or pick fresh per league).
-4. Draft fresh roster.
+1. Commissioner creates a new league with `series='mx'`.
+2. Same accounts (Connor, Tom) join via invite code.
+3. New brand-color picks (independent of SX league).
+4. Fresh draft.
 
-The existing SX league stays read-only as a finished season archive (with
-the season recap page available indefinitely).
+Existing SX league stays read-only as a finished season. The Season Recap
+page is permanent.
 
 ---
 
-## Estimated effort
+## What stays untouched (SX preservation guarantee)
 
-Rough breakdown assuming I'm doing the work in normal flow:
+To make sure nothing breaks:
 
-| Phase | Estimate |
-|---|---|
-| 1. Schema + migrations + race insert | 1 hour |
-| 2. Rider class scraping & insert | 1 hour |
-| 3. MX result scraping (cron logic) | 2 hours |
-| 4. UI updates (schedule/lineup/recap) | 2 hours |
-| 5. Polish + testing during round 1 | ongoing |
-| **Total** | **~6 hours of focused work** |
+- ✅ `riders` table is **never modified** by MX work. SX-specific data lives
+  there forever.
+- ✅ `races`, `weekly_lineups`, `race_results`, `race_bonuses`,
+  `league_rosters` get a `series` filter via `races.series` — old rows are
+  all `'sx'` and stay that way.
+- ✅ `leagues` get a `series` column defaulting to `'sx'`. The Bar 9 league
+  becomes `'sx'`; the new MX league becomes `'mx'`.
+- ✅ Existing SX URLs and pages keep working unchanged.
+
+---
+
+## Status checklist
+
+- [x] Plan locked (this doc)
+- [ ] Phase 1 — schema migration written and applied
+- [ ] Phase 1 — code: queries become series-aware
+- [ ] Phase 2 — MX entry list scraping script
+- [ ] Phase 3 — MX result scraping cron
+- [ ] Phase 4 — UI updates
+- [ ] Phase 5 — user-facing migration / new MX league creation
 
 ---
 
@@ -217,6 +259,4 @@ Rough breakdown assuming I'm doing the work in normal flow:
 
 - SMX playoff series — get MX working first
 - Cross-series stats ("season-long combined SMX standings")
-- Fantasy contests across leagues (head-to-head between SX and MX leagues)
-- Weather/track condition data
-- Practice timing
+- Practice timing / weather / track conditions
