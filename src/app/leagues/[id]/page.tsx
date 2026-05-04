@@ -222,7 +222,7 @@ export default function LeagueDashboard() {
       {/* Quick Actions — only show after draft is complete */}
       {league.draft_status === "completed" && (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <Link
               href={`/leagues/${id}/team`}
               className="block bg-[#1A1A1A] hover:bg-[#333333] text-white rounded-xl p-4 text-center transition-colors shadow-sm"
@@ -238,6 +238,15 @@ export default function LeagueDashboard() {
               <p className="text-[#8A8A8A] text-xs mt-1">Latest results, bonuses & league scores</p>
             </Link>
           </div>
+
+          {/* Season Recap (full season awards) */}
+          <Link
+            href={`/leagues/${id}/season-recap`}
+            className="block bg-gradient-to-r from-[#C8A84E]/10 to-[#1A1A1A]/5 hover:from-[#C8A84E]/20 border border-[#C8A84E]/40 text-[#1A1A1A] rounded-xl p-4 text-center transition-colors shadow-sm mb-6"
+          >
+            <p className="font-semibold text-lg">Season Recap</p>
+            <p className="text-[#8A8A8A] text-xs mt-1">Champion, awards, top picks & season superlatives</p>
+          </Link>
 
           {/* Upcoming Race */}
           {upcomingRace && (
