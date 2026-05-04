@@ -50,6 +50,7 @@ interface Transaction {
 interface LeagueMember {
   user_id: number;
   team_name: string | null;
+  team_logo: string | null;
   username: string;
 }
 
@@ -571,15 +572,22 @@ export default function TeamPage() {
   async function saveTeam() {
     const config = JSON.stringify({ brand: bikeBrand, number: bikeNumber });
     setSaving(true);
-    await fetch(`/api/leagues/${leagueId}/team`, {
+    const res = await fetch(`/api/leagues/${leagueId}/team`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ team_name: teamName, team_logo: config }),
     });
     setSaving(false);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Save failed" }));
+      setMessage(err.error || "Save failed");
+      setTimeout(() => setMessage(""), 4000);
+      return;
+    }
     setEditing(false);
     setShowBikeEditor(false);
     setData((prev) => prev ? { ...prev, team_name: teamName || null, team_logo: config } : prev);
+    loadTeamData();
     setMessage("Team saved!");
     setTimeout(() => setMessage(""), 2000);
   }
@@ -690,21 +698,45 @@ export default function TeamPage() {
               <h3 className="text-xs text-[#8A8A8A] uppercase tracking-wide mb-2">Number Plate</h3>
               <div className="mb-4">
                 <label className="block text-xs text-[#8A8A8A] mb-2">Brand (color)</label>
+                <p className="text-[10px] text-[#A0A0A0] mb-2">Each manager picks a unique manufacturer for their team color.</p>
                 <div className="grid grid-cols-4 gap-2">
-                  {Object.entries(BIKE_BRANDS).map(([key, { color, label }]) => (
-                    <button
-                      key={key}
-                      onClick={() => setBikeBrand(key)}
-                      className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border-2 transition-all text-sm font-medium ${
-                        bikeBrand === key
-                          ? "border-[#1A1A1A] bg-white shadow-sm"
-                          : "border-[#D4D0CB] bg-[#EBE7E2] hover:border-[#8A8A8A]"
-                      }`}
-                    >
-                      <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                      <span className="text-[#1A1A1A] truncate">{label}</span>
-                    </button>
-                  ))}
+                  {Object.entries(BIKE_BRANDS).map(([key, { color, label }]) => {
+                    // Determine if another member already uses this brand
+                    const takenBy = (data?.members || []).find((m) => {
+                      if (m.user_id === data?.my_user_id) return false;
+                      if (!m.team_logo) return false;
+                      try {
+                        const parsed = JSON.parse(m.team_logo);
+                        return parsed?.brand === key;
+                      } catch {
+                        return false;
+                      }
+                    });
+                    const disabled = !!takenBy && bikeBrand !== key;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => !disabled && setBikeBrand(key)}
+                        disabled={disabled}
+                        title={takenBy ? `Used by ${takenBy.username}` : label}
+                        className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border-2 transition-all text-sm font-medium relative ${
+                          bikeBrand === key
+                            ? "border-[#1A1A1A] bg-white shadow-sm"
+                            : disabled
+                            ? "border-[#D4D0CB] bg-[#EBE7E2] opacity-40 cursor-not-allowed"
+                            : "border-[#D4D0CB] bg-[#EBE7E2] hover:border-[#8A8A8A]"
+                        }`}
+                      >
+                        <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                        <span className="text-[#1A1A1A] truncate">{label}</span>
+                        {takenBy && bikeBrand !== key && (
+                          <span className="absolute -top-1 -right-1 bg-[#1A1A1A] text-white text-[8px] px-1 py-0.5 rounded-full">
+                            taken
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
               <div className="mb-4">

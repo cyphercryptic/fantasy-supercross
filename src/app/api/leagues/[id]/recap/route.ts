@@ -58,12 +58,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     .eq("status", "completed")
     .order("round_number", { ascending: true });
 
-  // Get race results with rider info
+  // Get race results with rider info (include rider id for ownership lookup)
   const { data: results } = await supabase
     .from("race_results")
     .select("position, points, riders(id, name, number, team, class)")
     .eq("race_id", race.id)
     .order("position");
+
+  // Get bonuses with rider info — defined later, but we need to ensure rider ids are returned
+  // (already in select)
 
   // Get bonuses with rider info
   const { data: bonuses } = await supabase
@@ -92,11 +95,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // Calculate user team scores for this race
   const { data: leagueMembers } = await supabase
     .from("league_members")
-    .select("user_id, app_users(username)")
+    .select("user_id, team_name, team_logo, app_users(username)")
     .eq("league_id", id);
 
-  type MemberRow = { user_id: number; app_users: { username: string } | null };
+  type MemberRow = { user_id: number; team_name: string | null; team_logo: string | null; app_users: { username: string } | null };
   const members = (leagueMembers || []) as unknown as MemberRow[];
+
+  // Get every rostered rider and which user owns them (for highlighting in recap)
+  const { data: rosterEntries } = await supabase
+    .from("league_rosters")
+    .select("user_id, rider_id")
+    .eq("league_id", id);
+  const riderToUser: Record<number, number> = {};
+  for (const r of rosterEntries || []) {
+    riderToUser[r.rider_id] = r.user_id;
+  }
 
   const { data: lineups } = await supabase
     .from("weekly_lineups")
@@ -139,6 +152,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const userScores: {
     user_id: number;
     username: string;
+    team_name: string | null;
+    team_logo: string | null;
     total: number;
     riders: { name: string; number: number | null; class: string; position: number | null; points: number; bonusPoints: number }[];
   }[] = [];
@@ -165,6 +180,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     userScores.push({
       user_id: m.user_id,
       username: m.app_users?.username || "Unknown",
+      team_name: m.team_name,
+      team_logo: m.team_logo,
       total,
       riders: userRiders.sort((a, b) => (b.points + b.bonusPoints) - (a.points + a.bonusPoints)),
     });
@@ -197,12 +214,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     top450: top450.map((r) => ({
       position: r.position,
       points: r.points,
-      rider: r.riders ? { name: r.riders.name, number: r.riders.number, team: r.riders.team, class: r.riders.class } : null,
+      rider: r.riders ? { id: r.riders.id, name: r.riders.name, number: r.riders.number, team: r.riders.team, class: r.riders.class } : null,
     })),
     top250: top250.map((r) => ({
       position: r.position,
       points: r.points,
-      rider: r.riders ? { name: r.riders.name, number: r.riders.number, team: r.riders.team, class: r.riders.class } : null,
+      rider: r.riders ? { id: r.riders.id, name: r.riders.name, number: r.riders.number, team: r.riders.team, class: r.riders.class } : null,
     })),
     bonuses: {
       heat_450: heatWinners450.map((b) => ({ type: b.bonus_type, rider: b.riders })),
@@ -213,6 +230,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       holeshots_250: holeshots250.map((b) => b.riders),
     },
     bonusSummary: { heatCount, holeshotCount },
+    riderToUser, // map of rider_id → user_id (who has them on roster)
     userScores,
   });
 }

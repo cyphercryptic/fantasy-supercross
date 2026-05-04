@@ -51,12 +51,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // Get all league members for the selector dropdown
   const { data: allMembers } = await supabase
     .from("league_members")
-    .select("user_id, team_name, app_users(username)")
+    .select("user_id, team_name, team_logo, app_users(username)")
     .eq("league_id", id);
 
   const members = (allMembers || []).map((m) => ({
     user_id: (m as Record<string, unknown>).user_id as number,
     team_name: (m as Record<string, unknown>).team_name as string | null,
+    team_logo: (m as Record<string, unknown>).team_logo as string | null,
     username: ((m as Record<string, unknown>).app_users as Record<string, unknown>)?.username as string || "Unknown",
   }));
 
@@ -138,6 +139,41 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (body.team_logo !== undefined) {
     const logoData = body.team_logo as string;
+
+    // Enforce unique brand per league: no two managers can have the same manufacturer
+    if (logoData) {
+      let myBrand: string | null = null;
+      try {
+        const parsed = JSON.parse(logoData);
+        myBrand = (parsed?.brand as string) || null;
+      } catch {
+        // ignore parse errors
+      }
+
+      if (myBrand) {
+        const { data: otherMembers } = await supabase
+          .from("league_members")
+          .select("user_id, team_logo")
+          .eq("league_id", id)
+          .neq("user_id", user.id);
+
+        for (const m of otherMembers || []) {
+          if (!m.team_logo) continue;
+          try {
+            const otherParsed = JSON.parse(m.team_logo);
+            if (otherParsed?.brand === myBrand) {
+              return NextResponse.json(
+                { error: `Another manager in this league already uses ${myBrand}. Pick a different manufacturer.` },
+                { status: 409 }
+              );
+            }
+          } catch {
+            continue;
+          }
+        }
+      }
+    }
+
     await supabase
       .from("league_members")
       .update({ team_logo: logoData || null })
