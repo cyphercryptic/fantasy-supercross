@@ -42,7 +42,7 @@ function get250Region(roundNumber: number): "west" | "east" | "showdown" | null 
 }
 
 // Discover event ID and class IDs from supercrosslive main page
-async function discoverEventInfo(): Promise<{ eventId: string; classIds: string[] } | null> {
+async function discoverEventInfo(): Promise<{ eventId: string; classIds: string[]; city: string | null } | null> {
   try {
     const res = await fetch("https://results.supercrosslive.com/results/");
     const html = await res.text();
@@ -50,12 +50,46 @@ async function discoverEventInfo(): Promise<{ eventId: string; classIds: string[
     const eventIdMatch = html.match(/event_id=(\d+)/);
     if (!eventIdMatch) return null;
 
+    const titleMatch = html.match(/<title>[^:]*::\s*([^<]+?)<\/title>/i);
+    const city = titleMatch ? titleMatch[1].trim() : null;
+
     const classIdMatches = [...html.matchAll(/class_id=(\d+)/g)];
     const classIds = [...new Set(classIdMatches.map((m) => m[1]))];
 
-    return { eventId: eventIdMatch[1], classIds };
+    return { eventId: eventIdMatch[1], classIds, city };
   } catch {
     return null;
+  }
+}
+
+// Get class IDs for a specific event by scraping its event page
+async function fetchEventClassIds(eventId: string): Promise<string[]> {
+  try {
+    const res = await fetch(`https://results.supercrosslive.com/results/?p=view_event&id=${eventId}`);
+    const html = await res.text();
+    const matches = [...html.matchAll(/view_entry_list[^"]*id=\d+[^"]*class_id=(\d+)/g)];
+    return [...new Set(matches.map((m) => m[1]))];
+  } catch {
+    return [];
+  }
+}
+
+// Verify the event page city matches an expected race name
+async function eventMatchesCity(eventId: string, expectedCity: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://results.supercrosslive.com/results/?p=view_event&id=${eventId}`);
+    const html = await res.text();
+    const titleMatch = html.match(/<title>[^:]*::\s*([^<]+?)<\/title>/i);
+    if (!titleMatch) return false;
+    const eventCity = titleMatch[1].trim().toLowerCase();
+    const raceCity = expectedCity.toLowerCase();
+    return (
+      eventCity.includes(raceCity) ||
+      raceCity.includes(eventCity) ||
+      eventCity.replace(/\s+city/i, "") === raceCity.replace(/\s+city/i, "")
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -80,23 +114,37 @@ export async function GET(req: NextRequest) {
     // Discover current event info from supercrosslive
     const eventInfo = await discoverEventInfo();
 
-    // Use the race's event_id if set, otherwise try to discover it
+    // Verify the saved event_id matches the next race's city — clear it if not
     let eventId = nextRace?.event_id;
-    let classIds: string[] = [];
-
-    if (eventInfo) {
-      if (!eventId) {
-        eventId = eventInfo.eventId;
-        // Save discovered event_id to the race
-        if (nextRace) {
-          await supabase.from("races").update({ event_id: eventId }).eq("id", nextRace.id);
-        }
+    if (eventId && nextRace?.name) {
+      const matches = await eventMatchesCity(eventId, nextRace.name);
+      if (!matches) {
+        eventId = undefined;
       }
-      classIds = eventInfo.classIds;
     }
 
-    if (!eventId || classIds.length === 0) {
-      return NextResponse.json({ message: "No event or entry list available yet", updated: 0 });
+    if (!eventId && eventInfo && nextRace) {
+      // Only use discovered event ID if its city matches our next race
+      const cityLower = eventInfo.city?.toLowerCase() || "";
+      const raceLower = nextRace.name.toLowerCase();
+      const cityMatch =
+        cityLower.includes(raceLower) ||
+        raceLower.includes(cityLower) ||
+        cityLower.replace(/\s+city/i, "") === raceLower.replace(/\s+city/i, "");
+      if (cityMatch) {
+        eventId = eventInfo.eventId;
+        await supabase.from("races").update({ event_id: eventId }).eq("id", nextRace.id);
+      }
+    }
+
+    if (!eventId) {
+      return NextResponse.json({ message: "No matching event found for next race yet", updated: 0 });
+    }
+
+    // Always pull class IDs from the actual event page (not the main page)
+    const classIds = await fetchEventClassIds(eventId);
+    if (classIds.length === 0) {
+      return NextResponse.json({ message: "No class IDs found on event page yet", updated: 0 });
     }
 
     // Fetch entry lists for all classes
