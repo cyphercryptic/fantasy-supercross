@@ -40,6 +40,17 @@ function parseDriverNames(html: string): string[] {
   return names;
 }
 
+async function fetchEventPageCity(eventId: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://results.supercrosslive.com/results/?p=view_event&id=${eventId}`);
+    const html = await res.text();
+    const titleMatch = html.match(/<title>[^:]*::\s*([^<]+?)<\/title>/i);
+    return titleMatch ? titleMatch[1].trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchEventRaces(eventId: string): Promise<ParsedRace[]> {
   const url = `https://results.supercrosslive.com/results/?p=view_event&id=${eventId}`;
   const res = await fetch(url);
@@ -210,8 +221,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: "No race today — skipping", processed: 0 });
     }
 
-    // Auto-discover event IDs for races that don't have one
+    // Auto-discover event IDs for races that don't have one,
+    // and verify existing event_ids actually point to the correct city
     for (const race of recentUpcoming) {
+      if (race.event_id) {
+        // Verify the existing event_id points to the right city
+        const eventCity = await fetchEventPageCity(race.event_id);
+        const raceCity = race.name.toLowerCase();
+        const eventCityLower = eventCity?.toLowerCase() || "";
+        const cityMatches =
+          eventCityLower.includes(raceCity) ||
+          raceCity.includes(eventCityLower) ||
+          eventCityLower.replace(/\s+city/i, "") === raceCity.replace(/\s+city/i, "");
+        if (!cityMatches) {
+          // event_id points to wrong city — clear it so we can re-discover
+          race.event_id = null;
+        }
+      }
       if (!race.event_id) {
         const discoveredId = await discoverEventId(race.name);
         if (discoveredId) {
