@@ -234,6 +234,31 @@ export default function RecapPage() {
         </Link>
       </div>
 
+      {/* Race selector */}
+      <div className="mb-4">
+        <label className="block text-xs text-[#8A8A8A] uppercase tracking-wide mb-1.5">Viewing race</label>
+        <select
+          value={race.id}
+          onChange={(e) => {
+            const newId = e.target.value;
+            // Navigate to most-recent if user picks the latest, drop the param so default behaviour applies
+            const latest = navigation[navigation.length - 1];
+            if (latest && String(latest.id) === newId) {
+              router.push(`/leagues/${id}/recap`);
+            } else {
+              router.push(`/leagues/${id}/recap?raceId=${newId}`);
+            }
+          }}
+          className="w-full bg-[#F5F0EB] border border-[#D4D0CB] rounded-lg px-3 py-2.5 text-[#1A1A1A] text-sm font-medium focus:outline-none focus:border-[#1A1A1A]"
+        >
+          {[...navigation].reverse().map((r) => (
+            <option key={r.id} value={r.id}>
+              Round {r.round_number} — {r.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Race title card */}
       <div className="bg-[#1A1A1A] text-white rounded-xl p-5 mb-6">
         <div className="flex items-start justify-between gap-3">
@@ -329,9 +354,9 @@ export default function RecapPage() {
         </section>
       )}
 
-      {/* Top 5 finishers */}
+      {/* Top 10 finishers */}
       <section className="mb-6">
-        <h3 className="text-xs font-bold text-[#8A8A8A] uppercase tracking-widest mb-3">Top 5 Finishers</h3>
+        <h3 className="text-xs font-bold text-[#8A8A8A] uppercase tracking-widest mb-3">Top 10 Finishers</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <h4 className="text-[#1A1A1A] font-bold mb-2 text-sm">450 Class</h4>

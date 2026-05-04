@@ -80,8 +80,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   type BonusRow = { bonus_type: string; points: number; riders: RiderInfo | null };
 
   const all = (results || []) as unknown as ResultRow[];
-  const top450 = all.filter((r) => r.riders?.class === "450").slice(0, 5);
-  const top250 = all.filter((r) => r.riders?.class !== "450").slice(0, 5);
+  const top450 = all.filter((r) => r.riders?.class === "450").slice(0, 10);
+  const top250 = all.filter((r) => r.riders?.class !== "450").slice(0, 10);
 
   // Categorize bonuses
   const allBonuses = (bonuses || []) as unknown as BonusRow[];
