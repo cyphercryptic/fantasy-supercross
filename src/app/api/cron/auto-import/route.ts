@@ -283,7 +283,7 @@ export async function GET(req: NextRequest) {
       return null;
     }
 
-    const results: { raceId: number; raceName: string; status: string; resultsImported: number; bonusCount: number; unmatchedCount?: number }[] = [];
+    const results: { raceId: number; raceName: string; status: string; resultsImported: number; bonusCount: number; unmatchedCount?: number; unmatchedNames?: string[]; webhookError?: string }[] = [];
 
     for (const race of pendingRaces) {
       try {
@@ -460,11 +460,12 @@ export async function GET(req: NextRequest) {
         await supabase.from("races").update({ status: "completed" }).eq("id", race.id);
 
         // Notify via n8n webhook if there are unmatched riders who scored points
+        let webhookError: string | undefined;
         if (unmatchedRiders.length > 0) {
           const webhookUrl = process.env.N8N_WEBHOOK_URL;
           if (webhookUrl) {
             try {
-              await fetch(webhookUrl, {
+              const webhookRes = await fetch(webhookUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -474,9 +475,16 @@ export async function GET(req: NextRequest) {
                   message: `<h2>Fantasy SX: Unmatched Riders</h2><p>${unmatchedRiders.length} rider(s) scored points in <strong>${race.name}</strong> but are not in the database:</p><ul>${unmatchedRiders.map((r) => `<li><strong>${r.name}</strong> — P${r.position} in ${r.raceClass} class (${r.points} pts missed)</li>`).join("")}</ul>`,
                 }),
               });
-            } catch (webhookErr) {
-              console.error("Webhook notification failed:", webhookErr);
+              if (!webhookRes.ok) {
+                webhookError = `Webhook returned ${webhookRes.status}`;
+                console.error(webhookError, await webhookRes.text());
+              }
+            } catch (err) {
+              webhookError = (err as Error).message;
+              console.error("Webhook notification failed:", err);
             }
+          } else {
+            webhookError = "N8N_WEBHOOK_URL not configured";
           }
         }
 
@@ -487,6 +495,12 @@ export async function GET(req: NextRequest) {
           resultsImported,
           bonusCount: bonuses.length,
           unmatchedCount: unmatchedRiders.length,
+          // Always include unmatched names in the response so they're visible in cron logs
+          // even if the webhook fails
+          ...(unmatchedRiders.length > 0 && {
+            unmatchedNames: unmatchedRiders.map((r) => `${r.name} (P${r.position} ${r.raceClass})`),
+          }),
+          ...(webhookError && { webhookError }),
         });
       } catch (err) {
         results.push({

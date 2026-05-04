@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/leagues/[id]/rider-stats — stats for all riders on user's roster
+// GET /api/leagues/[id]/rider-stats — stats for all riders (used by team + free-agents pages)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) {
@@ -23,29 +23,24 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
-  // Get ALL rider IDs (roster + free agents) so stats show everywhere
-  const { data: allRiders } = await supabase
-    .from("riders")
-    .select("id");
+  // Fetch in parallel: race metadata, all race results, all bonuses
+  const [racesRes, resultsRes, bonusesRes] = await Promise.all([
+    supabase.from("races").select("id, round_number, name"),
+    supabase.from("race_results").select("rider_id, race_id, position, points"),
+    supabase.from("race_bonuses").select("rider_id, points"),
+  ]);
 
-  if (!allRiders || allRiders.length === 0) {
-    return NextResponse.json({});
+  const races = racesRes.data || [];
+  const allResults = resultsRes.data || [];
+  const allBonuses = bonusesRes.data || [];
+
+  // Build race lookup map
+  const raceMap = new Map<number, { round_number: number; name: string }>();
+  for (const r of races) {
+    raceMap.set(r.id, { round_number: r.round_number, name: r.name });
   }
 
-  const riderIds = allRiders.map((r) => r.id);
-
-  // Get all race results for all riders (include race name)
-  const { data: allResults } = await supabase
-    .from("race_results")
-    .select("rider_id, position, points, races(round_number, name)")
-    .order("rider_id");
-
-  // Get bonus stats for all riders
-  const { data: allBonuses } = await supabase
-    .from("race_bonuses")
-    .select("rider_id, points");
-
-  // Aggregate stats per rider
+  // Aggregate per rider
   const statsMap = new Map<number, {
     racesRaced: number;
     totalPositionPoints: number;
@@ -54,49 +49,59 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     recent: { round: number; raceName: string; position: number; points: number }[];
   }>();
 
-  for (const riderId of riderIds) {
-    statsMap.set(riderId, { racesRaced: 0, totalPositionPoints: 0, totalBonus: 0, positionSum: 0, recent: [] });
+  function getOrInit(riderId: number) {
+    let s = statsMap.get(riderId);
+    if (!s) {
+      s = { racesRaced: 0, totalPositionPoints: 0, totalBonus: 0, positionSum: 0, recent: [] };
+      statsMap.set(riderId, s);
+    }
+    return s;
   }
 
-  // Process results
+  // Group results per rider
   const resultsByRider = new Map<number, typeof allResults>();
-  for (const r of allResults || []) {
+  for (const r of allResults) {
     const arr = resultsByRider.get(r.rider_id) || [];
     arr.push(r);
     resultsByRider.set(r.rider_id, arr);
   }
 
   for (const [riderId, results] of resultsByRider) {
-    if (!results) continue;
-    const stat = statsMap.get(riderId)!;
+    const stat = getOrInit(riderId);
     stat.racesRaced = results.length;
-    stat.totalPositionPoints = results.reduce((sum, r) => sum + r.points, 0);
-    stat.positionSum = results.reduce((sum, r) => sum + (r.position || 0), 0);
+    let positionSum = 0;
+    let totalPoints = 0;
+    for (const r of results) {
+      positionSum += r.position || 0;
+      totalPoints += r.points;
+    }
+    stat.positionSum = positionSum;
+    stat.totalPositionPoints = totalPoints;
 
-    // Recent results (sorted by round_number desc, take 3)
+    // Build recent (top 5 most recent rounds)
     const sorted = [...results].sort((a, b) => {
-      const aRound = (a.races as unknown as unknown as Record<string, unknown>)?.round_number as number || 0;
-      const bRound = (b.races as unknown as unknown as Record<string, unknown>)?.round_number as number || 0;
+      const aRound = raceMap.get(a.race_id)?.round_number || 0;
+      const bRound = raceMap.get(b.race_id)?.round_number || 0;
       return bRound - aRound;
     });
-    stat.recent = sorted.map((r) => {
-      const race = r.races as unknown as Record<string, unknown>;
+    stat.recent = sorted.slice(0, 5).map((r) => {
+      const race = raceMap.get(r.race_id);
       return {
-        round: (race?.round_number as number) || 0,
-        raceName: (race?.name as string) || "",
+        round: race?.round_number || 0,
+        raceName: race?.name || "",
         position: r.position,
         points: r.points,
       };
     });
   }
 
-  // Process bonuses
-  for (const b of allBonuses || []) {
+  // Apply bonuses
+  for (const b of allBonuses) {
     const stat = statsMap.get(b.rider_id);
     if (stat) stat.totalBonus += b.points;
   }
 
-  // Build response
+  // Build response (only riders with results)
   const result: Record<number, {
     avgFinish: number;
     totalPoints: number;
@@ -117,5 +122,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
   }
 
-  return NextResponse.json(result);
+  // Cache for 60 seconds — stats don't change between races
+  return NextResponse.json(result, {
+    headers: { "Cache-Control": "private, max-age=60" },
+  });
 }

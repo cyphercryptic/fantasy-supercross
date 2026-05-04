@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { get250Region } from "@/lib/race-region";
 
 interface Race {
   id: number;
@@ -36,17 +37,6 @@ function splitLocation(location: string | null) {
   const parts = location.split(" - ");
   if (parts.length === 2) return { venue: parts[0], city: parts[1] };
   return { venue: null, city: location };
-}
-
-const WEST_ROUNDS = new Set([1, 2, 3, 4, 5, 6, 16]);
-const EAST_ROUNDS = new Set([7, 8, 9, 11, 13, 14, 15]);
-const SHOWDOWN_ROUNDS = new Set([10, 12, 17]);
-
-function get250Region(roundNumber: number): "west" | "east" | "showdown" | null {
-  if (WEST_ROUNDS.has(roundNumber)) return "west";
-  if (EAST_ROUNDS.has(roundNumber)) return "east";
-  if (SHOWDOWN_ROUNDS.has(roundNumber)) return "showdown";
-  return null;
 }
 
 const TRIPLE_CROWN_ROUNDS = new Set([4, 9, 14]);

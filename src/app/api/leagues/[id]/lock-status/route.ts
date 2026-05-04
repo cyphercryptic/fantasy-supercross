@@ -4,7 +4,8 @@ import { supabase } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 // GET /api/leagues/[id]/lock-status — check if rosters/lineups are locked
-// Locks 1 hour before race_time and stays locked until midnight ET that day
+// Locks AT race_time and stays locked until 5 hours after the race starts.
+// (Client may poll more frequently in the hour leading up to a race.)
 export async function GET() {
   const { data: upcomingRaces } = await supabase
     .from("races")

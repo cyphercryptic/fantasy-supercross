@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import TeamLogo from "@/components/TeamLogo";
+import { get250Region } from "@/lib/race-region";
 
 interface Rider {
   id: number;
@@ -26,18 +27,6 @@ interface Race {
   round_number: number | null;
   status: string;
   race_time: string | null;
-}
-
-const WEST_ROUNDS = new Set([1, 2, 3, 4, 5, 6, 16]);
-const EAST_ROUNDS = new Set([7, 8, 9, 11, 13, 14, 15]);
-const SHOWDOWN_ROUNDS = new Set([10, 12, 17]);
-
-function get250Region(roundNumber: number | null): "west" | "east" | "showdown" | null {
-  if (roundNumber == null) return null;
-  if (WEST_ROUNDS.has(roundNumber)) return "west";
-  if (EAST_ROUNDS.has(roundNumber)) return "east";
-  if (SHOWDOWN_ROUNDS.has(roundNumber)) return "showdown";
-  return null;
 }
 
 function regionLabel(roundNumber: number | null): string {
@@ -145,7 +134,7 @@ export default function LineupPage() {
     const res = await fetch(`/api/leagues/${id}/lineup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ raceId: selectedRace, riderIds: activeRiderIds, raceRegion }),
+      body: JSON.stringify({ raceId: selectedRace, riderIds: activeRiderIds }),
     });
     const data = await res.json();
     setSaving(false);

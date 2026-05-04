@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getCurrentUser } from "@/lib/auth";
 import { isRaceLocked } from "@/lib/race-lock";
+import { get250Region } from "@/lib/race-region";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const { id } = await params;
-  const { raceId, riderIds, raceRegion } = await req.json();
+  const { raceId, riderIds } = await req.json();
 
   const { data: member } = await supabase
     .from("league_members")
@@ -75,6 +76,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (isRaceLocked(race)) {
     return NextResponse.json({ error: "Lineup is locked — race has started" }, { status: 400 });
   }
+
+  // Derive race region from server-side round_number (don't trust client)
+  const raceRegion = get250Region(race.round_number);
 
   const { data: league } = await supabase
     .from("leagues")

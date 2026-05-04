@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import TeamLogo from "@/components/TeamLogo";
 import MotoBike, { BIKE_BRANDS, parseBikeConfig } from "@/components/MotoBike";
+import { get250Region } from "@/lib/race-region";
 
 interface Rider {
   id: number;
@@ -78,18 +79,6 @@ interface RiderStats {
   totalBonus: number;
   racesRaced: number;
   recent: { round: number; raceName: string; position: number; points: number }[];
-}
-
-const WEST_ROUNDS = new Set([1, 2, 3, 4, 5, 6, 16]);
-const EAST_ROUNDS = new Set([7, 8, 9, 11, 13, 14, 15]);
-const SHOWDOWN_ROUNDS = new Set([10, 12, 17]);
-
-function get250Region(roundNumber: number | null): "west" | "east" | "showdown" | null {
-  if (roundNumber == null) return null;
-  if (WEST_ROUNDS.has(roundNumber)) return "west";
-  if (EAST_ROUNDS.has(roundNumber)) return "east";
-  if (SHOWDOWN_ROUNDS.has(roundNumber)) return "showdown";
-  return null;
 }
 
 /* ─── Rider Stats Modal ─── */

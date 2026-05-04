@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { RIDER_ALIASES } from "@/lib/rider-aliases";
+import { get250Region } from "@/lib/race-region";
 
 export const dynamic = "force-dynamic";
 
@@ -27,18 +28,6 @@ async function fetchEntryList(eventId: string, classId: string): Promise<string[
   }
 
   return names;
-}
-
-// Round-to-region mapping for 250 class
-const WEST_ROUNDS = new Set([1, 2, 3, 4, 5, 6, 16]);
-const EAST_ROUNDS = new Set([7, 8, 9, 11, 13, 14, 15]);
-const SHOWDOWN_ROUNDS = new Set([10, 12, 17]);
-
-function get250Region(roundNumber: number): "west" | "east" | "showdown" | null {
-  if (WEST_ROUNDS.has(roundNumber)) return "west";
-  if (EAST_ROUNDS.has(roundNumber)) return "east";
-  if (SHOWDOWN_ROUNDS.has(roundNumber)) return "showdown";
-  return null;
 }
 
 // Discover event ID and class IDs from supercrosslive main page
@@ -162,7 +151,7 @@ export async function GET(req: NextRequest) {
     const { data: allRiders } = await supabase.from("riders").select("id, name, status, class");
 
     // Determine which 250 region this race is
-    const raceRegion = nextRace?.round_number ? get250Region(nextRace.round_number) : null;
+    const raceRegion = get250Region(nextRace?.round_number);
     const riders = allRiders || [];
 
     // Build reverse alias map (DB name → possible entry list names)
