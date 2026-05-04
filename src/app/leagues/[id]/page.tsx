@@ -222,13 +222,20 @@ export default function LeagueDashboard() {
       {/* Quick Actions — only show after draft is complete */}
       {league.draft_status === "completed" && (
         <>
-          <div className="mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
             <Link
               href={`/leagues/${id}/team`}
               className="block bg-[#1A1A1A] hover:bg-[#333333] text-white rounded-xl p-4 text-center transition-colors shadow-sm"
             >
               <p className="font-semibold text-lg">My Team</p>
               <p className="text-white/60 text-xs mt-1">Roster, Lineup & Free Agents</p>
+            </Link>
+            <Link
+              href={`/leagues/${id}/recap`}
+              className="block bg-[#F5F0EB] hover:bg-[#EBE7E2] border border-[#D4D0CB] text-[#1A1A1A] rounded-xl p-4 text-center transition-colors shadow-sm"
+            >
+              <p className="font-semibold text-lg">Race Recap</p>
+              <p className="text-[#8A8A8A] text-xs mt-1">Latest results, bonuses & league scores</p>
             </Link>
           </div>
 
