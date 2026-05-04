@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import TeamLogo from "@/components/TeamLogo";
+import StatusBadge from "@/components/StatusBadge";
 
 interface Rider {
   id: number;
@@ -484,9 +485,7 @@ export default function FreeAgentsPage() {
                           <span className="text-[#1A1A1A] font-bold">#{rider.number}</span>
                         )}
                         <span className="text-[#1A1A1A] font-medium">{rider.name}</span>
-                        {rider.status === "out" && (
-                          <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">OUT</span>
-                        )}
+                        <StatusBadge status={rider.status} />
                       </div>
                       <div className="flex gap-2 mt-0.5">
                         {rider.team && <span className="text-[#8A8A8A] text-xs">{rider.team}</span>}

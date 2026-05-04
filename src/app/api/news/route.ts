@@ -27,15 +27,19 @@ export async function GET() {
     }
   }
 
-  // Get riders currently marked as out
-  const { data: outRiders } = await supabase
+  // Get riders currently marked as out or questionable
+  const { data: flaggedRiders } = await supabase
     .from("riders")
-    .select("id, name, number, team, class")
-    .eq("status", "out");
+    .select("id, name, number, team, class, status")
+    .in("status", ["out", "questionable"]);
+
+  const outRiders = (flaggedRiders || []).filter((r) => r.status === "out");
+  const questionableRiders = (flaggedRiders || []).filter((r) => r.status === "questionable");
 
   return NextResponse.json({
     news: newsItems || [],
-    outRiders: outRiders || [],
+    outRiders,
+    questionableRiders,
     injuries: Array.from(latestByRider.values()),
   });
 }

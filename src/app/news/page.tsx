@@ -14,7 +14,7 @@ interface NewsItem {
   category: string;
 }
 
-interface OutRider {
+interface FlaggedRider {
   id: number;
   name: string;
   number: number | null;
@@ -24,7 +24,8 @@ interface OutRider {
 
 interface NewsData {
   news: NewsItem[];
-  outRiders: OutRider[];
+  outRiders: FlaggedRider[];
+  questionableRiders: FlaggedRider[];
 }
 
 export default function NewsPage() {
@@ -81,45 +82,90 @@ export default function NewsPage() {
         </div>
 
         {/* Injury Report Banner */}
-        {data.outRiders.length > 0 && (
-          <div className="bg-white border border-red-200 rounded-xl p-5 mb-8 shadow-sm">
+        {(data.outRiders.length > 0 || (data.questionableRiders?.length ?? 0) > 0) && (
+          <div className="bg-white border border-[#D4D0CB] rounded-xl p-5 mb-8 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center">
                 <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
                 </svg>
               </div>
-              <h2 className="text-lg font-bold text-[#1A1A1A]">Current Injuries</h2>
-              <span className="ml-auto bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full">
-                {data.outRiders.length} OUT
-              </span>
+              <h2 className="text-lg font-bold text-[#1A1A1A]">Injury Report</h2>
+              <div className="ml-auto flex items-center gap-2">
+                {data.outRiders.length > 0 && (
+                  <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                    {data.outRiders.length} OUT
+                  </span>
+                )}
+                {(data.questionableRiders?.length ?? 0) > 0 && (
+                  <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                    {data.questionableRiders.length} Q
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {data.outRiders.map((rider) => (
-                <div
-                  key={rider.id}
-                  className="flex items-center gap-3 bg-red-50 rounded-lg p-3 border border-red-100"
-                >
-                  <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      {rider.number != null && (
-                        <span className="text-[#1A1A1A] font-bold text-sm">#{rider.number}</span>
-                      )}
-                      <span className="text-[#1A1A1A] font-medium text-sm">{rider.name}</span>
-                      <span className="text-red-600 text-xs font-bold ml-1">OUT</span>
+            {data.outRiders.length > 0 && (
+              <>
+                <h3 className="text-xs font-bold text-[#8A8A8A] uppercase tracking-wide mb-2">Out</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+                  {data.outRiders.map((rider) => (
+                    <div
+                      key={rider.id}
+                      className="flex items-center gap-3 bg-red-50 rounded-lg p-3 border border-red-100"
+                    >
+                      <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          {rider.number != null && (
+                            <span className="text-[#1A1A1A] font-bold text-sm">#{rider.number}</span>
+                          )}
+                          <span className="text-[#1A1A1A] font-medium text-sm">{rider.name}</span>
+                          <span className="text-red-600 text-xs font-bold ml-1">OUT</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {rider.team && (
+                            <p className="text-[#8A8A8A] text-xs">{rider.team}</p>
+                          )}
+                          <span className="text-[#A0A0A0] text-xs">{rider.class}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {rider.team && (
-                        <p className="text-[#8A8A8A] text-xs">{rider.team}</p>
-                      )}
-                      <span className="text-[#A0A0A0] text-xs">{rider.class}</span>
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
+
+            {(data.questionableRiders?.length ?? 0) > 0 && (
+              <>
+                <h3 className="text-xs font-bold text-[#8A8A8A] uppercase tracking-wide mb-2">Questionable</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {data.questionableRiders.map((rider) => (
+                    <div
+                      key={rider.id}
+                      className="flex items-center gap-3 bg-amber-50 rounded-lg p-3 border border-amber-100"
+                    >
+                      <div className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          {rider.number != null && (
+                            <span className="text-[#1A1A1A] font-bold text-sm">#{rider.number}</span>
+                          )}
+                          <span className="text-[#1A1A1A] font-medium text-sm">{rider.name}</span>
+                          <span className="text-amber-600 text-xs font-bold ml-1">Q</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {rider.team && (
+                            <p className="text-[#8A8A8A] text-xs">{rider.team}</p>
+                          )}
+                          <span className="text-[#A0A0A0] text-xs">{rider.class}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 

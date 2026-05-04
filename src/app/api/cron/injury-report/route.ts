@@ -63,6 +63,49 @@ async function fetchEventClassIds(eventId: string): Promise<string[]> {
   }
 }
 
+// Get the IDs of qualifying race result pages for an event (250 + 450 quals)
+async function fetchQualifyingRaceIds(eventId: string): Promise<string[]> {
+  try {
+    const res = await fetch(`https://results.supercrosslive.com/results/?p=view_event&id=${eventId}`);
+    const html = await res.text();
+    const linkRegex = /href="\/results\/\?p=view_race_result(?:&amp;|&)id=(\d+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    const ids: string[] = [];
+    let match;
+    while ((match = linkRegex.exec(html)) !== null) {
+      const name = match[2].replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, "").trim().toLowerCase();
+      // Real qualifying sessions only — exclude practice sessions and KTM Junior
+      if ((name.includes("250") || name.includes("450")) && name.includes("qualifying")) {
+        ids.push(match[1]);
+      }
+    }
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
+// Pull rider names from a single race results page (used for qualifying)
+async function fetchRaceParticipants(raceId: string): Promise<string[]> {
+  try {
+    const res = await fetch(`https://results.supercrosslive.com/results/?p=view_race_result&id=${raceId}`);
+    const html = await res.text();
+    const names: string[] = [];
+    const regex = /driverNames\.push\('([^']+)'\)/g;
+    let m;
+    while ((m = regex.exec(html)) !== null) {
+      const titleCase = m[1]
+        .toLowerCase()
+        .replace(/\b\w/g, (c) => c.toUpperCase())
+        .replace(/\bMc(\w)/g, (_, c) => `Mc${c.toUpperCase()}`)
+        .replace(/\bO'(\w)/g, (_, c) => `O'${c.toUpperCase()}`);
+      names.push(titleCase);
+    }
+    return names;
+  } catch {
+    return [];
+  }
+}
+
 // Verify the event page city matches an expected race name
 async function eventMatchesCity(eventId: string, expectedCity: string): Promise<boolean> {
   try {
@@ -147,6 +190,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: "Entry list not posted yet", updated: 0 });
     }
 
+    // Try to fetch qualifying participants — riders on entry list but absent from
+    // qualifying are flagged as Questionable
+    const qualifyingRaceIds = await fetchQualifyingRaceIds(eventId);
+    const allQualifierNames = new Set<string>();
+    for (const qid of qualifyingRaceIds) {
+      const names = await fetchRaceParticipants(qid);
+      names.forEach((n) => allQualifierNames.add(n.replace(/\./g, "").toLowerCase()));
+    }
+    const qualifyingDataAvailable = allQualifierNames.size > 0;
+
     // Get all riders from DB
     const { data: allRiders } = await supabase.from("riders").select("id, name, status, class");
 
@@ -161,28 +214,23 @@ export async function GET(req: NextRequest) {
       reverseAliases[dbName].push(scxName);
     }
 
-    function isOnEntryList(riderName: string): boolean {
+    // Match a name against a list of normalized names, using alias map
+    function nameMatches(riderName: string, normalizedList: Set<string>): boolean {
       const nameNorm = riderName.replace(/\./g, "").toLowerCase();
-
-      // Check direct match
-      if (allEntryNames.some((e) => e.replace(/\./g, "").toLowerCase() === nameNorm)) return true;
-
-      // Check aliases
+      if (normalizedList.has(nameNorm)) return true;
       const aliases = reverseAliases[riderName] || [];
       for (const alias of aliases) {
-        if (allEntryNames.some((e) => e.replace(/\./g, "").toLowerCase() === alias.replace(/\./g, "").toLowerCase())) return true;
+        if (normalizedList.has(alias.replace(/\./g, "").toLowerCase())) return true;
       }
-
-      // Also check the forward alias map
       const aliasName = RIDER_ALIASES[riderName];
-      if (aliasName) {
-        if (allEntryNames.some((e) => e.replace(/\./g, "").toLowerCase() === aliasName.replace(/\./g, "").toLowerCase())) return true;
-      }
-
+      if (aliasName && normalizedList.has(aliasName.replace(/\./g, "").toLowerCase())) return true;
       return false;
     }
 
+    const entryListSet = new Set(allEntryNames.map((n) => n.replace(/\./g, "").toLowerCase()));
+
     let markedOut = 0;
+    let markedQuestionable = 0;
     let markedActive = 0;
 
     for (const rider of riders) {
@@ -190,25 +238,44 @@ export async function GET(req: NextRequest) {
       if (raceRegion === "east" && rider.class === "250W") continue;
       if (raceRegion === "west" && rider.class === "250E") continue;
 
-      const onList = isOnEntryList(rider.name);
+      const onEntryList = nameMatches(rider.name, entryListSet);
+      const qualified = qualifyingDataAvailable ? nameMatches(rider.name, allQualifierNames) : true;
 
-      if (!onList && rider.status !== "out") {
-        // Not on entry list → mark as out
-        await supabase.from("riders").update({ status: "out" }).eq("id", rider.id);
-        markedOut++;
-      } else if (onList && rider.status === "out") {
-        // On entry list but was marked out → mark as active
-        await supabase.from("riders").update({ status: "active" }).eq("id", rider.id);
-        markedActive++;
+      // Decide target status
+      // - Not on entry list → OUT
+      // - On entry list but missed qualifying (only if we have qualifying data) → QUESTIONABLE
+      // - Otherwise → ACTIVE
+      let targetStatus: "active" | "out" | "questionable";
+      if (!onEntryList) {
+        targetStatus = "out";
+      } else if (qualifyingDataAvailable && !qualified) {
+        targetStatus = "questionable";
+      } else {
+        targetStatus = "active";
+      }
+
+      if (rider.status !== targetStatus) {
+        await supabase.from("riders").update({ status: targetStatus }).eq("id", rider.id);
+        if (targetStatus === "out") markedOut++;
+        else if (targetStatus === "questionable") markedQuestionable++;
+        else markedActive++;
       }
     }
 
     // Also reset opposite-region 250 riders to active (they're not "out", just not racing this round)
     if (raceRegion === "east") {
-      const { count } = await supabase.from("riders").update({ status: "active" }).eq("class", "250W").eq("status", "out");
+      const { count } = await supabase
+        .from("riders")
+        .update({ status: "active" })
+        .eq("class", "250W")
+        .in("status", ["out", "questionable"]);
       if (count) markedActive += count;
     } else if (raceRegion === "west") {
-      const { count } = await supabase.from("riders").update({ status: "active" }).eq("class", "250E").eq("status", "out");
+      const { count } = await supabase
+        .from("riders")
+        .update({ status: "active" })
+        .eq("class", "250E")
+        .in("status", ["out", "questionable"]);
       if (count) markedActive += count;
     }
 
@@ -217,7 +284,10 @@ export async function GET(req: NextRequest) {
       raceName: nextRace?.name || "Unknown",
       eventId,
       entryListSize: allEntryNames.length,
+      qualifyingDataAvailable,
+      qualifierCount: allQualifierNames.size,
       markedOut,
+      markedQuestionable,
       markedActive,
       totalRiders: riders.length,
     });

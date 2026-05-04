@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import TeamLogo from "@/components/TeamLogo";
 import MotoBike, { BIKE_BRANDS, parseBikeConfig } from "@/components/MotoBike";
+import StatusBadge from "@/components/StatusBadge";
 import { get250Region } from "@/lib/race-region";
 
 interface Rider {
@@ -907,9 +908,7 @@ export default function TeamPage() {
                                       <span className="text-[#1A1A1A] font-bold text-sm">#{rider.number}</span>
                                     )}
                                     <span className="text-[#1A1A1A] font-medium text-sm truncate">{rider.name}</span>
-                                    {rider.status === "out" && (
-                                      <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none shrink-0">OUT</span>
-                                    )}
+                                    <StatusBadge status={rider.status} />
                                   </div>
                                   {rider.team && (
                                     <p className="text-[#8A8A8A] text-xs truncate">{rider.team}</p>
@@ -942,9 +941,7 @@ export default function TeamPage() {
                                       <span className="text-[#1A1A1A] font-bold text-sm">#{rider.number}</span>
                                     )}
                                     <span className="text-[#1A1A1A] font-medium text-sm truncate">{rider.name}</span>
-                                    {rider.status === "out" && (
-                                      <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none shrink-0">OUT</span>
-                                    )}
+                                    <StatusBadge status={rider.status} />
                                   </div>
                                   {rider.team && (
                                     <p className="text-[#8A8A8A] text-xs truncate">{rider.team}</p>
