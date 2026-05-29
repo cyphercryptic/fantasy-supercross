@@ -55,6 +55,14 @@ CREATE TABLE sessions (
   expires_at TIMESTAMPTZ NOT NULL
 );
 
+-- Persistent franchise identity spanning multiple season-leagues
+CREATE TABLE league_groups (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_by INTEGER NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE leagues (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -72,8 +80,12 @@ CREATE TABLE leagues (
   last_pick_at TIMESTAMPTZ,
   draft_auto_users JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  series TEXT NOT NULL DEFAULT 'sx'        -- 'sx' | 'mx' | 'smx'
+  series TEXT NOT NULL DEFAULT 'sx',       -- 'sx' | 'mx' | 'smx'
+  group_id INTEGER REFERENCES league_groups(id) ON DELETE SET NULL,
+  season_year INTEGER,
+  archived_at TIMESTAMPTZ                  -- set when league is renewed; makes it read-only
 );
+CREATE INDEX leagues_group_id_idx ON leagues(group_id);
 
 -- Per-series rider data (riders may change number/team/class between seasons)
 -- The riders table stays as the canonical "identity" record. This table layers

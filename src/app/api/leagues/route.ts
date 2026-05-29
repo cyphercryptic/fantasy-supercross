@@ -65,17 +65,19 @@ export async function GET(req: NextRequest) {
     countMap.set(m.league_id, (countMap.get(m.league_id) || 0) + 1);
   }
 
-  const leagues = memberEntries.map((m) => {
-    const league = m.leagues as unknown as Record<string, unknown>;
-    return {
-      ...league,
-      joined_at: m.joined_at,
-      team_name: m.team_name,
-      team_logo: m.team_logo,
-      member_count: countMap.get(m.league_id) || 0,
-      is_commissioner: (league.commissioner_id as number) === user.id ? 1 : 0,
-    };
-  });
+  const leagues = memberEntries
+    .map((m) => {
+      const league = m.leagues as unknown as Record<string, unknown>;
+      return {
+        ...league,
+        joined_at: m.joined_at,
+        team_name: m.team_name,
+        team_logo: m.team_logo,
+        member_count: countMap.get(m.league_id) || 0,
+        is_commissioner: (league.commissioner_id as number) === user.id ? 1 : 0,
+      };
+    })
+    .filter((l) => !(l as unknown as Record<string, unknown>).archived_at);
 
   return NextResponse.json(leagues);
 }
@@ -117,11 +119,15 @@ export async function POST(req: NextRequest) {
     const passwordHash = bcrypt.hashSync(password, 10);
     const inviteCode = uuidv4().slice(0, 8).toUpperCase();
 
+    const groupId = typeof body.group_id === "number" ? body.group_id : null;
+    const seasonYear = typeof body.season_year === "number" ? body.season_year : new Date().getFullYear();
+
     const { data: newLeague } = await supabase
       .from("leagues")
       .insert({
         name, password_hash: passwordHash, invite_code: inviteCode, commissioner_id: user.id,
         max_members: mm, roster_size: rs, lineup_450: l450, lineup_250e: l250e, lineup_250w: l250w,
+        group_id: groupId, season_year: seasonYear,
       })
       .select("id")
       .single();

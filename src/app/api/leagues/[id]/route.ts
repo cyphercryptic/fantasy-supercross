@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const { data: league } = await supabase
     .from("leagues")
-    .select("*")
+    .select("*, league_groups(id, name)")
     .eq("id", id)
     .maybeSingle();
   if (!league) {

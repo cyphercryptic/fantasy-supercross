@@ -37,6 +37,10 @@ export default function LeaguesPage() {
   const [lineup450, setLineup450] = useState(3);
   const [lineup250e, setLineup250e] = useState(2);
   const [lineup250w, setLineup250w] = useState(2);
+  const [seasonYear, setSeasonYear] = useState(new Date().getFullYear());
+  const [franchiseChoice, setFranchiseChoice] = useState<"none" | "new" | number>("none");
+  const [newFranchiseName, setNewFranchiseName] = useState("");
+  const [existingGroups, setExistingGroups] = useState<{ id: number; name: string }[]>([]);
 
   // Join form
   const [inviteCode, setInviteCode] = useState("");
@@ -47,10 +51,14 @@ export default function LeaguesPage() {
 
   useEffect(() => {
     loadLeagues();
+    fetch("/api/groups").then((r) => r.json()).then((d) => { if (Array.isArray(d)) setExistingGroups(d); });
   }, []);
 
   function loadLeagues() {
-    fetch("/api/leagues").then((r) => r.json()).then(setLeagues);
+    fetch("/api/leagues").then((r) => {
+      if (r.status === 401) { window.location.href = "/login"; return; }
+      return r.json();
+    }).then((d) => { if (Array.isArray(d)) setLeagues(d); });
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -64,6 +72,20 @@ export default function LeaguesPage() {
       return;
     }
 
+    let groupId: number | null = null;
+    if (franchiseChoice === "new" && newFranchiseName.trim()) {
+      const gr = await fetch("/api/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newFranchiseName.trim() }),
+      });
+      const gd = await gr.json();
+      if (!gr.ok) { setError(gd.error || "Failed to create franchise"); return; }
+      groupId = gd.id;
+    } else if (typeof franchiseChoice === "number") {
+      groupId = franchiseChoice;
+    }
+
     const res = await fetch("/api/leagues", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -71,6 +93,7 @@ export default function LeaguesPage() {
         action: "create",
         name, password, max_members: maxMembers, roster_size: rosterSize,
         lineup_450: lineup450, lineup_250e: lineup250e, lineup_250w: lineup250w,
+        season_year: seasonYear, group_id: groupId,
       }),
     });
     const data = await res.json();
@@ -307,6 +330,51 @@ export default function LeaguesPage() {
           <p className="text-[#A0A0A0] text-xs">
             Total lineup slots: {lineup450 + lineup250e + lineup250w} · Roster must hold at least this many riders
           </p>
+
+          <div className="border-t border-[#D4D0CB] pt-4 space-y-3">
+            <div>
+              <label className="block text-[#8A8A8A] text-sm mb-1">Season Year</label>
+              <input
+                type="number"
+                min={2020}
+                max={2050}
+                value={seasonYear}
+                onChange={(e) => setSeasonYear(parseInt(e.target.value) || new Date().getFullYear())}
+                className="w-full bg-[#EBE7E2] border border-[#D4D0CB] rounded px-3 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#1A1A1A]"
+              />
+            </div>
+            <div>
+              <label className="block text-[#8A8A8A] text-sm mb-1">Franchise (optional)</label>
+              <select
+                value={typeof franchiseChoice === "number" ? String(franchiseChoice) : franchiseChoice}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "none" || v === "new") setFranchiseChoice(v);
+                  else setFranchiseChoice(parseInt(v));
+                }}
+                className="w-full bg-[#EBE7E2] border border-[#D4D0CB] rounded px-3 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#1A1A1A]"
+              >
+                <option value="none">No franchise</option>
+                {existingGroups.map((g) => (
+                  <option key={g.id} value={String(g.id)}>{g.name}</option>
+                ))}
+                <option value="new">Create new franchise...</option>
+              </select>
+            </div>
+            {franchiseChoice === "new" && (
+              <div>
+                <label className="block text-[#8A8A8A] text-sm mb-1">Franchise Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Bar 9 Fantasy"
+                  value={newFranchiseName}
+                  onChange={(e) => setNewFranchiseName(e.target.value)}
+                  className="w-full bg-[#EBE7E2] border border-[#D4D0CB] rounded px-3 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#1A1A1A]"
+                />
+              </div>
+            )}
+          </div>
+
           <button
             type="submit"
             className="w-full bg-[#1A1A1A] hover:bg-[#333333] text-white py-2 rounded font-semibold"

@@ -15,7 +15,12 @@ interface League {
   lineup_250e: number;
   lineup_250w: number;
   draft_status: string;
+  series: string;
   is_commissioner: boolean;
+  group_id: number | null;
+  season_year: number | null;
+  archived_at: string | null;
+  league_groups: { id: number; name: string } | null;
   members: { id: number; username: string; joined_at: string }[];
 }
 
@@ -65,15 +70,26 @@ export default function LeagueDashboard() {
   const [breakdownData, setBreakdownData] = useState<Record<number, RiderBreakdown[]>>({});
   const [loadingBreakdown, setLoadingBreakdown] = useState<number | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRenew, setShowRenew] = useState(false);
+  const [renewSeries, setRenewSeries] = useState("mx");
+  const [renewLineup450, setRenewLineup450] = useState(3);
+  const [renewLineup250, setRenewLineup250] = useState(2);
+  const [renewing, setRenewing] = useState(false);
+  const [renewError, setRenewError] = useState("");
 
   useEffect(() => {
     fetch(`/api/leagues/${id}`).then((r) => r.json()).then((d) => { if (!d.error) setLeague(d); });
     fetch(`/api/leagues/${id}/leaderboard`).then((r) => r.json()).then((d) => { if (Array.isArray(d)) setStandings(d); });
-    fetch("/api/races").then((r) => r.json()).then((races: Race[]) => {
-      const upcoming = races.find((r) => r.status === "upcoming");
-      if (upcoming) setUpcomingRace(upcoming);
-    });
   }, [id]);
+
+  useEffect(() => {
+    if (!league) return;
+    const series = league.series ?? "sx";
+    fetch(`/api/races?series=${series}`).then((r) => r.json()).then((races: Race[]) => {
+      const upcoming = races.find((r) => r.status === "upcoming");
+      setUpcomingRace(upcoming ?? null);
+    });
+  }, [league]);
 
   function copyCode() {
     if (league) {
@@ -114,6 +130,28 @@ export default function LeagueDashboard() {
       // silently fail
     }
     setLoadingBreakdown(null);
+  }
+
+  async function handleRenew() {
+    setRenewError("");
+    setRenewing(true);
+    const res = await fetch(`/api/leagues/${id}/renew`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        series: renewSeries,
+        season_year: new Date().getFullYear(),
+        lineup_450: renewLineup450,
+        lineup_250: renewLineup250,
+      }),
+    });
+    const data = await res.json();
+    setRenewing(false);
+    if (res.ok) {
+      router.push(`/leagues/${data.id}`);
+    } else {
+      setRenewError(data.error || "Something went wrong");
+    }
   }
 
   if (!league) {
@@ -225,6 +263,18 @@ export default function LeagueDashboard() {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
+          {league.league_groups && (
+            <Link
+              href={`/groups/${league.league_groups.id}`}
+              className="inline-flex items-center gap-1 text-xs text-[#8A8A8A] hover:text-[#1A1A1A] mb-1 transition-colors"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H7.83l4.88-4.88c.39-.39.39-1.03 0-1.42-.39-.39-1.02-.39-1.41 0l-6.59 6.59c-.39.39-.39 1.02 0 1.41l6.59 6.59c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41L7.83 13H19c.55 0 1-.45 1-1s-.45-1-1-1z" />
+              </svg>
+              {league.league_groups.name}
+              {league.season_year && <span className="text-[#A0A0A0]">· {league.season_year}</span>}
+            </Link>
+          )}
           <h1 className="text-3xl font-bold text-[#1A1A1A] tracking-tight">{league.name}</h1>
           <p className="text-[#8A8A8A] text-sm mt-1">
             {league.members.length}/{league.max_members} members
@@ -505,6 +555,98 @@ export default function LeagueDashboard() {
           ))}
         </div>
       </div>
+
+      {/* Renew Season — commissioner only, completed leagues only */}
+      {league.is_commissioner && league.draft_status === "completed" && !league.archived_at && (
+        <div className="bg-[#F5F0EB] border border-[#D4D0CB] rounded-xl p-6 shadow-sm mt-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-[#1A1A1A] font-semibold">Start New Season</h2>
+              <p className="text-[#8A8A8A] text-sm mt-0.5">
+                Archive this season and re-draft with the same members for the next series.
+              </p>
+            </div>
+            {!showRenew && (
+              <button
+                onClick={() => {
+                  setRenewLineup450(league.lineup_450);
+                  setRenewLineup250(league.lineup_250e + league.lineup_250w);
+                  setShowRenew(true);
+                }}
+                className="bg-[#1A1A1A] hover:bg-[#333333] text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+              >
+                Renew Season
+              </button>
+            )}
+          </div>
+
+          {showRenew && (
+            <div className="mt-4 pt-4 border-t border-[#D4D0CB] space-y-4">
+              {renewError && (
+                <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded px-3 py-2">{renewError}</p>
+              )}
+              <div>
+                <label className="block text-[#8A8A8A] text-xs mb-1">New Series</label>
+                <select
+                  value={renewSeries}
+                  onChange={(e) => setRenewSeries(e.target.value)}
+                  className="w-full bg-[#EBE7E2] border border-[#D4D0CB] rounded px-3 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#1A1A1A]"
+                >
+                  <option value="mx">Outdoor Motocross (MX)</option>
+                  <option value="smx">SuperMotocross Playoffs (SMX)</option>
+                  <option value="sx">Supercross (SX)</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[#8A8A8A] text-xs mb-1">
+                    {renewSeries === "sx" ? "450 Lineup Slots" : "450MX Lineup Slots"}
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={renewLineup450}
+                    onChange={(e) => setRenewLineup450(parseInt(e.target.value) || 1)}
+                    className="w-full bg-[#EBE7E2] border border-[#D4D0CB] rounded px-3 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#1A1A1A]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[#8A8A8A] text-xs mb-1">
+                    {renewSeries === "sx" ? "250 Lineup Slots (E+W)" : "250MX Lineup Slots"}
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={renewLineup250}
+                    onChange={(e) => setRenewLineup250(parseInt(e.target.value) || 1)}
+                    className="w-full bg-[#EBE7E2] border border-[#D4D0CB] rounded px-3 py-2 text-[#1A1A1A] text-sm focus:outline-none focus:border-[#1A1A1A]"
+                  />
+                </div>
+              </div>
+              <p className="text-[#A0A0A0] text-xs">
+                All {league.members.length} members will be carried over automatically. The current season is archived and viewable via Franchise History.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleRenew}
+                  disabled={renewing}
+                  className="bg-[#1A1A1A] hover:bg-[#333333] text-white px-5 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 transition-colors"
+                >
+                  {renewing ? "Creating new season..." : "Confirm & Start New Season"}
+                </button>
+                <button
+                  onClick={() => { setShowRenew(false); setRenewError(""); }}
+                  className="text-[#8A8A8A] hover:text-[#1A1A1A] text-sm px-3 py-2"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -40,7 +40,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ race, results, bonuses });
   }
 
-  const { data: races } = await supabase.from("races").select("*").order("round_number", { ascending: true });
+  const series = req.nextUrl.searchParams.get("series");
+  let query = supabase.from("races").select("*").order("round_number", { ascending: true });
+  if (series) query = query.eq("series", series);
+  const { data: races } = await query;
   return NextResponse.json(races);
 }
 
