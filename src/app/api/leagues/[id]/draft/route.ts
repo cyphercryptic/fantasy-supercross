@@ -100,6 +100,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const draftedRiderIds = picks.map((p) => p.rider_id);
 
+  // For non-SX leagues, override pick class from rider_series (riders table has SX classes)
+  const series = (league as Record<string, unknown>).series as string || "sx";
+  let processedPicks = picks;
+  if (series !== "sx" && picks.length > 0) {
+    const { data: seriesData } = await supabase
+      .from("rider_series")
+      .select("rider_id, class")
+      .eq("series", series)
+      .in("rider_id", draftedRiderIds);
+    const classOverride = new Map((seriesData || []).map((rs) => [rs.rider_id, rs.class]));
+    processedPicks = picks.map((p) => ({ ...p, class: classOverride.get(p.rider_id) || p.class }));
+  }
+
   const autoUsers: number[] = (league as League).draft_auto_users || [];
   const baseTimer = (league as League).draft_pick_timer || 60;
   const effectiveTimer = info.currentUserId && autoUsers.includes(info.currentUserId) ? 10 : baseTimer;
@@ -112,7 +125,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     round: info.round,
     total_picks: league.max_members * league.roster_size,
     roster_size: league.roster_size,
-    picks,
+    series,
+    picks: processedPicks,
     members,
     drafted_rider_ids: draftedRiderIds,
     is_my_turn: info.currentUserId === user.id,

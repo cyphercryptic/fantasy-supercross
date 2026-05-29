@@ -8,13 +8,30 @@ export const dynamic = "force-dynamic";
 interface ParsedRace {
   name: string;
   url: string;
-  type: "heat_250" | "heat_450" | "lcq_250" | "lcq_450" | "main_250" | "main_450" | "other";
+  type: "heat_250" | "heat_450" | "lcq_250" | "lcq_450" | "main_250" | "main_450" | "moto1_250" | "moto1_450" | "moto2_250" | "moto2_450" | "other";
   heatNumber?: number;
   isOverall?: boolean;
 }
 
-function classifyRace(name: string): ParsedRace["type"] {
+// MX results use promotocross.com; SX uses supercrosslive.com — same URL structure, different domain
+function getResultsBaseUrl(series: string): string {
+  return series === "mx"
+    ? "https://results.promotocross.com/results"
+    : "https://results.supercrosslive.com/results";
+}
+
+function classifyRace(name: string, series?: string): ParsedRace["type"] {
   const n = name.toLowerCase();
+  if (series === "mx") {
+    if (n.includes("450") && /moto\s*1\b/i.test(n)) return "moto1_450";
+    if (n.includes("450") && /moto\s*2\b/i.test(n)) return "moto2_450";
+    if (n.includes("250") && /moto\s*1\b/i.test(n)) return "moto1_250";
+    if (n.includes("250") && /moto\s*2\b/i.test(n)) return "moto2_250";
+    if (n.includes("450") && n.includes("overall")) return "main_450";
+    if (n.includes("250") && n.includes("overall")) return "main_250";
+    return "other";
+  }
+  // SX
   if (n.includes("250") && n.includes("heat")) return "heat_250";
   if (n.includes("450") && n.includes("heat")) return "heat_450";
   if (n.includes("250") && n.includes("lcq")) return "lcq_250";
@@ -40,9 +57,9 @@ function parseDriverNames(html: string): string[] {
   return names;
 }
 
-async function fetchEventPageCity(eventId: string): Promise<string | null> {
+async function fetchEventPageCity(eventId: string, baseUrl: string): Promise<string | null> {
   try {
-    const res = await fetch(`https://results.supercrosslive.com/results/?p=view_event&id=${eventId}`);
+    const res = await fetch(`${baseUrl}/?p=view_event&id=${eventId}`);
     const html = await res.text();
     const titleMatch = html.match(/<title>[^:]*::\s*([^<]+?)<\/title>/i);
     return titleMatch ? titleMatch[1].trim() : null;
@@ -51,8 +68,8 @@ async function fetchEventPageCity(eventId: string): Promise<string | null> {
   }
 }
 
-async function fetchEventRaces(eventId: string): Promise<ParsedRace[]> {
-  const url = `https://results.supercrosslive.com/results/?p=view_event&id=${eventId}`;
+async function fetchEventRaces(eventId: string, baseUrl: string, series?: string): Promise<ParsedRace[]> {
+  const url = `${baseUrl}/?p=view_event&id=${eventId}`;
   const res = await fetch(url);
   const html = await res.text();
 
@@ -62,11 +79,11 @@ async function fetchEventRaces(eventId: string): Promise<ParsedRace[]> {
   while ((match = linkRegex.exec(html)) !== null) {
     const rawContent = match[2].replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, "").trim();
     if (!rawContent) continue;
-    const raceType = classifyRace(rawContent);
+    const raceType = classifyRace(rawContent, series);
     if (raceType !== "other") {
       races.push({
         name: rawContent,
-        url: `https://results.supercrosslive.com/results/?p=view_race_result&id=${match[1]}`,
+        url: `${baseUrl}/?p=view_race_result&id=${match[1]}`,
         type: raceType,
         heatNumber: getHeatNumber(rawContent),
       });
@@ -77,11 +94,11 @@ async function fetchEventRaces(eventId: string): Promise<ParsedRace[]> {
   while ((match = overallRegex.exec(html)) !== null) {
     const rawContent = match[2].replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]+>/g, "").trim();
     if (!rawContent) continue;
-    const raceType = classifyRace(rawContent);
+    const raceType = classifyRace(rawContent, series);
     if (raceType !== "other") {
       races.push({
         name: rawContent,
-        url: `https://results.supercrosslive.com/results/?p=view_multi_main_result&id=${match[1]}`,
+        url: `${baseUrl}/?p=view_multi_main_result&id=${match[1]}`,
         type: raceType,
         isOverall: true,
       });
@@ -133,13 +150,12 @@ async function fetchRaceResults(raceUrl: string, expectedCity?: string): Promise
 }
 
 // When event page links are stale, search for the correct race by scanning nearby IDs
-async function findCorrectRaceId(staleId: string, expectedCity: string, raceType: string): Promise<string | null> {
+async function findCorrectRaceId(staleId: string, expectedCity: string, raceType: string, baseUrl: string): Promise<string | null> {
   const baseId = parseInt(staleId);
-  // Scan a range around the stale ID — correct IDs are usually nearby
   for (let offset = 1; offset <= 30; offset++) {
     for (const id of [baseId + offset, baseId - offset]) {
       try {
-        const res = await fetch(`https://results.supercrosslive.com/results/?p=view_race_result&id=${id}`);
+        const res = await fetch(`${baseUrl}/?p=view_race_result&id=${id}`);
         const html = await res.text();
         const titleMatch = html.match(/<title>[^:]*::\s*([^:]+?)\s*::\s*([^<]+)/i);
         if (!titleMatch) continue;
@@ -160,28 +176,24 @@ async function findCorrectRaceId(staleId: string, expectedCity: string, raceType
   return null;
 }
 
-// Auto-discover event ID from supercrosslive.com main results page
-async function discoverEventId(raceName: string): Promise<string | null> {
+// Auto-discover event ID from the series results page
+async function discoverEventId(raceName: string, baseUrl: string): Promise<string | null> {
   try {
-    const res = await fetch("https://results.supercrosslive.com/results/");
+    const res = await fetch(`${baseUrl}/`);
     const html = await res.text();
 
-    // Extract city name from page title
     const titleMatch = html.match(/<title>[^:]*::\s*([^<]+)<\/title>/i);
     if (!titleMatch) return null;
     const currentCity = titleMatch[1].trim().toLowerCase();
 
-    // Extract event_id from the page
     const eventIdMatch = html.match(/event_id=(\d+)/);
     if (!eventIdMatch) return null;
     const eventId = eventIdMatch[1];
 
-    // Match against our race name (e.g., "Detroit" matches "Detroit")
     const raceCity = raceName.toLowerCase().trim();
     if (
       currentCity.includes(raceCity) ||
       raceCity.includes(currentCity) ||
-      // Handle variations like "Salt Lake City" vs "Salt Lake"
       currentCity.replace(/\s+city/i, "") === raceCity.replace(/\s+city/i, "")
     ) {
       return eventId;
@@ -224,9 +236,9 @@ export async function GET(req: NextRequest) {
     // Auto-discover event IDs for races that don't have one,
     // and verify existing event_ids actually point to the correct city
     for (const race of recentUpcoming) {
+      const baseUrl = getResultsBaseUrl(race.series || "sx");
       if (race.event_id) {
-        // Verify the existing event_id points to the right city
-        const eventCity = await fetchEventPageCity(race.event_id);
+        const eventCity = await fetchEventPageCity(race.event_id, baseUrl);
         const raceCity = race.name.toLowerCase();
         const eventCityLower = eventCity?.toLowerCase() || "";
         const cityMatches =
@@ -234,12 +246,11 @@ export async function GET(req: NextRequest) {
           raceCity.includes(eventCityLower) ||
           eventCityLower.replace(/\s+city/i, "") === raceCity.replace(/\s+city/i, "");
         if (!cityMatches) {
-          // event_id points to wrong city — clear it so we can re-discover
           race.event_id = null;
         }
       }
       if (!race.event_id) {
-        const discoveredId = await discoverEventId(race.name);
+        const discoveredId = await discoverEventId(race.name, baseUrl);
         if (discoveredId) {
           await supabase.from("races").update({ event_id: discoveredId }).eq("id", race.id);
           race.event_id = discoveredId;
@@ -286,20 +297,35 @@ export async function GET(req: NextRequest) {
     const results: { raceId: number; raceName: string; status: string; resultsImported: number; bonusCount: number; unmatchedCount?: number; unmatchedNames?: string[]; webhookError?: string }[] = [];
 
     for (const race of pendingRaces) {
-      try {
-        const eventRaces = await fetchEventRaces(race.event_id);
+      const series = (race.series || "sx") as string;
+      const baseUrl = getResultsBaseUrl(series);
+      const isMX = series === "mx";
 
-        // Check if main event results are available yet
-        const hasMainResults = eventRaces.some(
-          (r) => r.type === "main_450" || r.type === "main_250"
-        );
+      try {
+        const eventRaces = await fetchEventRaces(race.event_id, baseUrl, series);
+
+        // Check what results are available
+        const hasMainResults = eventRaces.some((r) => r.type === "main_450" || r.type === "main_250");
         const hasOverallResults = eventRaces.some((r) => r.isOverall);
-        // Detect Triple Crown: multiple mains per class (e.g. "Main Event #1", "#2", "#3")
+        const hasMotoResults = eventRaces.some((r) => r.type.startsWith("moto"));
+
+        // SX Triple Crown: multiple mains per class
         const mainCount450 = eventRaces.filter((r) => r.type === "main_450").length;
         const mainCount250 = eventRaces.filter((r) => r.type === "main_250").length;
-        const looksLikeTripleCrown = mainCount450 > 1 || mainCount250 > 1;
+        const looksLikeTripleCrown = !isMX && (mainCount450 > 1 || mainCount250 > 1);
 
-        // For Triple Crown: wait for overall results before importing
+        // For MX: wait for overall before importing (motos are bonus-only)
+        // For Triple Crown: same — wait for overall
+        if (isMX && hasMotoResults && !hasOverallResults) {
+          results.push({
+            raceId: race.id,
+            raceName: race.name,
+            status: "waiting-mx-overall",
+            resultsImported: 0,
+            bonusCount: 0,
+          });
+          continue;
+        }
         if (looksLikeTripleCrown && !hasOverallResults) {
           results.push({
             raceId: race.id,
@@ -311,8 +337,7 @@ export async function GET(req: NextRequest) {
           continue;
         }
 
-        if (!hasMainResults && !hasOverallResults) {
-          // Results not posted yet — skip this race, try again next cron run
+        if (!hasMainResults && !hasOverallResults && !hasMotoResults) {
           results.push({
             raceId: race.id,
             raceName: race.name,
@@ -323,8 +348,6 @@ export async function GET(req: NextRequest) {
           continue;
         }
 
-        // Process results — same logic as manual import
-        // Track overall results separately (used for Triple Crown final standings)
         const mainResults: { type: string; results: string[] }[] = [];
         const overallResults: { type: string; results: string[] }[] = [];
         const individualMains: { type: string; results: string[]; name: string }[] = [];
@@ -348,9 +371,9 @@ export async function GET(req: NextRequest) {
             if (result.cityMismatch && (eventRace.type === "main_450" || eventRace.type === "main_250")) {
               const raceIdMatch = eventRace.url.match(/id=(\d+)/);
               if (raceIdMatch) {
-                const correctId = await findCorrectRaceId(raceIdMatch[1], race.name, eventRace.type);
+                const correctId = await findCorrectRaceId(raceIdMatch[1], race.name, eventRace.type, baseUrl);
                 if (correctId) {
-                  const correctedUrl = `https://results.supercrosslive.com/results/?p=view_race_result&id=${correctId}`;
+                  const correctedUrl = `${baseUrl}/?p=view_race_result&id=${correctId}`;
                   const corrected = await fetchRaceResults(correctedUrl, race.name);
                   if (!corrected.cityMismatch && corrected.names.length > 0) {
                     finishOrder = corrected.names;
@@ -363,15 +386,32 @@ export async function GET(req: NextRequest) {
 
           if (finishOrder.length === 0) continue;
 
+          // MX motos: generate moto winner + holeshot bonuses, track for scoring fallback
+          const isMoto1 = eventRace.type === "moto1_450" || eventRace.type === "moto1_250";
+          const isMoto2 = eventRace.type === "moto2_450" || eventRace.type === "moto2_250";
+          if (isMoto1 || isMoto2) {
+            const classPrefix = (eventRace.type === "moto1_450" || eventRace.type === "moto2_450") ? "450" : "250";
+            const motoNum = isMoto1 ? "1" : "2";
+            // Store as individualMains so we can fall back to motos if overall never posts
+            individualMains.push({ type: `main_${classPrefix}`, results: finishOrder, name: eventRace.name });
+
+            const winner = findRider(finishOrder[0]);
+            if (winner) bonuses.push({ riderId: winner.id, type: `moto${motoNum}_winner_${classPrefix}` });
+
+            if (holeshotRider) {
+              const hsRider = findRider(holeshotRider);
+              if (hsRider) bonuses.push({ riderId: hsRider.id, type: `holeshot_moto${motoNum}_${classPrefix}` });
+            }
+          }
+
+          // SX main events: holeshot bonuses
           if (eventRace.type === "main_450" || eventRace.type === "main_250") {
             individualMains.push({ type: eventRace.type, results: finishOrder, name: eventRace.name });
 
-            // Auto-detect holeshot from each main (Triple Crown has 3 per class)
             if (holeshotRider) {
               const hsRider = findRider(holeshotRider);
               if (hsRider) {
                 const classPrefix = eventRace.type === "main_450" ? "450" : "250";
-                // Use unique bonus type for multiple holeshots (e.g. holeshot_450, holeshot_450_2, holeshot_450_3)
                 const existingCount = bonuses.filter((b) => b.type.startsWith(`holeshot_${classPrefix}`)).length;
                 const suffix = existingCount > 0 ? `_${existingCount + 1}` : "";
                 bonuses.push({ riderId: hsRider.id, type: `holeshot_${classPrefix}${suffix}` });
@@ -379,9 +419,9 @@ export async function GET(req: NextRequest) {
             }
           }
 
+          // SX heat winners
           if (eventRace.type === "heat_250" || eventRace.type === "heat_450") {
-            const winnerName = finishOrder[0];
-            const winner = findRider(winnerName);
+            const winner = findRider(finishOrder[0]);
             if (winner) {
               const heatNum = eventRace.heatNumber || 1;
               const classPrefix = eventRace.type === "heat_450" ? "450" : "250";
@@ -389,9 +429,9 @@ export async function GET(req: NextRequest) {
             }
           }
 
+          // SX LCQ winners
           if (eventRace.type === "lcq_250" || eventRace.type === "lcq_450") {
-            const winnerName = finishOrder[0];
-            const winner = findRider(winnerName);
+            const winner = findRider(finishOrder[0]);
             if (winner) {
               const classPrefix = eventRace.type === "lcq_450" ? "450" : "250";
               bonuses.push({ riderId: winner.id, type: `lcq_${classPrefix}` });
@@ -399,16 +439,13 @@ export async function GET(req: NextRequest) {
           }
         }
 
-        // Triple Crown: if overall results exist, use those for scoring
-        // Otherwise use individual main results (normal race format)
-        const isTripleCrown = mainCount450 > 1 || mainCount250 > 1 || individualMains.some((m) => m.name.includes("#1") || m.name.includes("#2") || m.name.includes("#3"));
-        if (isTripleCrown && overallResults.length > 0) {
-          // Use overall standings for championship points
+        // Use overall for scoring when available (MX always; Triple Crown when detected)
+        const isTripleCrown = !isMX && (mainCount450 > 1 || mainCount250 > 1 || individualMains.some((m) => m.name.includes("#1") || m.name.includes("#2") || m.name.includes("#3")));
+        if ((isMX || isTripleCrown) && overallResults.length > 0) {
           for (const overall of overallResults) {
             mainResults.push(overall);
           }
         } else {
-          // Normal race — use individual main results
           for (const main of individualMains) {
             mainResults.push(main);
           }
@@ -495,8 +532,6 @@ export async function GET(req: NextRequest) {
           resultsImported,
           bonusCount: bonuses.length,
           unmatchedCount: unmatchedRiders.length,
-          // Always include unmatched names in the response so they're visible in cron logs
-          // even if the webhook fails
           ...(unmatchedRiders.length > 0 && {
             unmatchedNames: unmatchedRiders.map((r) => `${r.name} (P${r.position} ${r.raceClass})`),
           }),

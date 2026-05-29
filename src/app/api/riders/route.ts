@@ -5,7 +5,24 @@ import { getCurrentUser } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 // GET /api/riders — list all riders
-export async function GET() {
+// ?series=mx returns only riders in that series with series-specific class/number/team
+export async function GET(req: NextRequest) {
+  const series = req.nextUrl.searchParams.get("series");
+
+  if (series && series !== "sx") {
+    const { data } = await supabase
+      .from("rider_series")
+      .select("rider_id, class, number, team, status, riders(id, name)")
+      .eq("series", series)
+      .order("number", { ascending: true, nullsFirst: false });
+    return NextResponse.json(
+      (data || []).map((rs) => {
+        const r = rs.riders as unknown as { id: number; name: string };
+        return { id: r.id, name: r.name, class: rs.class, number: rs.number, team: rs.team, status: rs.status };
+      })
+    );
+  }
+
   const { data: riders } = await supabase
     .from("riders")
     .select("*")

@@ -77,14 +77,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Lineup is locked — race has started" }, { status: 400 });
   }
 
-  // Derive race region from server-side round_number (don't trust client)
-  const raceRegion = get250Region(race.round_number);
-
   const { data: league } = await supabase
     .from("leagues")
-    .select("lineup_450, lineup_250e, lineup_250w")
+    .select("lineup_450, lineup_250e, lineup_250w, series")
     .eq("id", id)
     .single();
+
+  const leagueSeries = (league?.series as string) || "sx";
 
   // Validate all riders are on roster
   const { data: rosterEntries } = await supabase
@@ -94,9 +93,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .eq("user_id", user.id);
 
   const rosterSet = new Set((rosterEntries || []).map((r) => r.rider_id));
-  const riderClassMap = new Map(
-    (rosterEntries || []).map((r) => [r.rider_id, (r.riders as unknown as unknown as Record<string, unknown>)?.class as string])
-  );
 
   for (const rid of riderIds) {
     if (!rosterSet.has(rid)) {
@@ -104,24 +100,54 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
   }
 
-  // Count per class
-  const classCounts: Record<string, number> = { "450": 0, "250E": 0, "250W": 0 };
-  for (const rid of riderIds) {
-    const cls = riderClassMap.get(rid) || "";
-    if (cls in classCounts) classCounts[cls]++;
+  // Build class map: for MX use rider_series (SX classes in riders table are stale)
+  let riderClassMap: Map<number, string>;
+  if (leagueSeries === "mx") {
+    const rosterIds = (rosterEntries || []).map((r) => r.rider_id);
+    const { data: seriesEntries } = await supabase
+      .from("rider_series")
+      .select("rider_id, class")
+      .eq("series", "mx")
+      .in("rider_id", rosterIds);
+    riderClassMap = new Map((seriesEntries || []).map((rs) => [rs.rider_id, rs.class as string]));
+  } else {
+    riderClassMap = new Map(
+      (rosterEntries || []).map((r) => [r.rider_id, (r.riders as unknown as Record<string, unknown>)?.class as string])
+    );
   }
 
-  const need250E = raceRegion === "east" || raceRegion === "showdown" || !raceRegion;
-  const need250W = raceRegion === "west" || raceRegion === "showdown" || !raceRegion;
-
-  if (classCounts["450"] !== league!.lineup_450) {
-    return NextResponse.json({ error: `Must select exactly ${league!.lineup_450} rider(s) from 450 class` }, { status: 400 });
-  }
-  if (need250E && classCounts["250E"] !== league!.lineup_250e) {
-    return NextResponse.json({ error: `Must select exactly ${league!.lineup_250e} rider(s) from 250E class` }, { status: 400 });
-  }
-  if (need250W && classCounts["250W"] !== league!.lineup_250w) {
-    return NextResponse.json({ error: `Must select exactly ${league!.lineup_250w} rider(s) from 250W class` }, { status: 400 });
+  if (leagueSeries === "mx") {
+    // MX: validate 450MX and 250MX counts
+    const classCounts: Record<string, number> = { "450MX": 0, "250MX": 0 };
+    for (const rid of riderIds) {
+      const cls = riderClassMap.get(rid) || "";
+      if (cls in classCounts) classCounts[cls]++;
+    }
+    if (classCounts["450MX"] !== league!.lineup_450) {
+      return NextResponse.json({ error: `Must select exactly ${league!.lineup_450} rider(s) from the 450MX class` }, { status: 400 });
+    }
+    if (classCounts["250MX"] !== league!.lineup_250e) {
+      return NextResponse.json({ error: `Must select exactly ${league!.lineup_250e} rider(s) from the 250MX class` }, { status: 400 });
+    }
+  } else {
+    // SX: derive race region, validate 450 / 250E / 250W
+    const raceRegion = get250Region(race.round_number);
+    const classCounts: Record<string, number> = { "450": 0, "250E": 0, "250W": 0 };
+    for (const rid of riderIds) {
+      const cls = riderClassMap.get(rid) || "";
+      if (cls in classCounts) classCounts[cls]++;
+    }
+    const need250E = raceRegion === "east" || raceRegion === "showdown" || !raceRegion;
+    const need250W = raceRegion === "west" || raceRegion === "showdown" || !raceRegion;
+    if (classCounts["450"] !== league!.lineup_450) {
+      return NextResponse.json({ error: `Must select exactly ${league!.lineup_450} rider(s) from 450 class` }, { status: 400 });
+    }
+    if (need250E && classCounts["250E"] !== league!.lineup_250e) {
+      return NextResponse.json({ error: `Must select exactly ${league!.lineup_250e} rider(s) from 250E class` }, { status: 400 });
+    }
+    if (need250W && classCounts["250W"] !== league!.lineup_250w) {
+      return NextResponse.json({ error: `Must select exactly ${league!.lineup_250w} rider(s) from 250W class` }, { status: 400 });
+    }
   }
 
   // Clear old lineup, insert new

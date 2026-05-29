@@ -40,6 +40,7 @@ interface DraftState {
   round: number;
   total_picks: number;
   roster_size: number;
+  series: string;
   picks: Pick[];
   members: Member[];
   drafted_rider_ids: number[];
@@ -70,8 +71,16 @@ export default function DraftPage() {
 
   useEffect(() => {
     loadDraft();
-    fetch("/api/riders").then((r) => r.json()).then(setAllRiders);
   }, [loadDraft]);
+
+  // Fetch riders once we know the league's series
+  const ridersFetched = useRef(false);
+  useEffect(() => {
+    if (!draft || ridersFetched.current) return;
+    ridersFetched.current = true;
+    const series = draft.series || "sx";
+    fetch(`/api/riders?series=${series}`).then((r) => r.json()).then(setAllRiders);
+  }, [draft]);
 
   // Poll for updates every 3 seconds
   useEffect(() => {
@@ -160,6 +169,10 @@ export default function DraftPage() {
   }
 
   const draftedSet = new Set(draft.drafted_rider_ids);
+  const series = draft.series || "sx";
+  const classOptions = series === "mx"
+    ? [{ key: "450MX", label: "450 Class" }, { key: "250MX", label: "250 Class" }]
+    : [{ key: "450", label: "450 Class" }, { key: "250E", label: "250 East" }, { key: "250W", label: "250 West" }];
   const currentUser = draft.members.find((m) => m.id === draft.current_user_id);
   const memberMap = new Map(draft.members.map((m) => [m.id, m]));
 
@@ -345,11 +358,7 @@ export default function DraftPage() {
             {(() => {
               const rosterUserId = viewingRosterId ?? draft.my_id;
               const rosterPicks = userRosters.get(rosterUserId) || [];
-              return [
-                { key: "450", label: "450 Class" },
-                { key: "250E", label: "250 East" },
-                { key: "250W", label: "250 West" },
-              ].map(({ key, label }) => {
+              return classOptions.map(({ key, label }) => {
                 const classRiders = rosterPicks.filter((p) => p.class === key);
                 return (
                   <div key={key} className="mb-3 last:mb-0">
@@ -420,9 +429,9 @@ export default function DraftPage() {
               className="bg-[#EBE7E2] border border-[#D4D0CB] rounded px-3 py-2 text-[#1A1A1A] text-sm"
             >
               <option value="all">All Classes</option>
-              <option value="450">450</option>
-              <option value="250E">250 East</option>
-              <option value="250W">250 West</option>
+              {classOptions.map(({ key, label }) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
             </select>
           </div>
 

@@ -24,6 +24,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
+  // Get league series to filter the right rider pool
+  const { data: leagueInfo } = await supabase
+    .from("leagues")
+    .select("series")
+    .eq("id", id)
+    .single();
+  const leagueSeries = (leagueInfo?.series as string) || "sx";
+
   // Get rostered rider IDs
   const { data: rostered } = await supabase
     .from("league_rosters")
@@ -31,30 +39,58 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     .eq("league_id", id);
   const rosteredIds = (rostered || []).map((r) => r.rider_id);
 
-  // Free agents = riders NOT on any roster
-  let freeAgentQuery = supabase.from("riders").select("*").order("number", { ascending: true, nullsFirst: false });
-  if (rosteredIds.length > 0) {
-    freeAgentQuery = freeAgentQuery.not("id", "in", `(${rosteredIds.join(",")})`);
+  // Free agents = riders in this series' pool NOT on any roster
+  let freeAgents: { id: number; name: string; number: number | null; team: string | null; class: string; status: string }[];
+  if (leagueSeries !== "sx") {
+    const { data: seriesRiders } = await supabase
+      .from("rider_series")
+      .select("rider_id, class, number, team, status, riders(id, name)")
+      .eq("series", leagueSeries)
+      .order("number", { ascending: true, nullsFirst: false });
+    freeAgents = (seriesRiders || [])
+      .filter((rs) => !rosteredIds.includes(rs.rider_id))
+      .map((rs) => {
+        const r = rs.riders as unknown as { id: number; name: string };
+        return { id: r.id, name: r.name, class: rs.class as string, number: rs.number as number | null, team: rs.team as string | null, status: rs.status as string };
+      });
+  } else {
+    let freeAgentQuery = supabase.from("riders").select("*").order("number", { ascending: true, nullsFirst: false });
+    if (rosteredIds.length > 0) {
+      freeAgentQuery = freeAgentQuery.not("id", "in", `(${rosteredIds.join(",")})`);
+    }
+    const { data } = await freeAgentQuery;
+    freeAgents = (data || []) as typeof freeAgents;
   }
-  const { data: freeAgents } = await freeAgentQuery;
 
-  // Get season points for all free agents
-  const freeAgentIds = (freeAgents || []).map((r) => r.id);
+  // Get season points for free agents — scoped to this series' races only
+  const freeAgentIds = freeAgents.map((r) => r.id);
   let seasonPoints: Record<number, number> = {};
   if (freeAgentIds.length > 0) {
-    const { data: results } = await supabase
-      .from("race_results")
-      .select("rider_id, points")
-      .in("rider_id", freeAgentIds);
-    const { data: bonuses } = await supabase
-      .from("race_bonuses")
-      .select("rider_id, points")
-      .in("rider_id", freeAgentIds);
-    for (const r of results || []) {
-      seasonPoints[r.rider_id] = (seasonPoints[r.rider_id] || 0) + r.points;
-    }
-    for (const b of bonuses || []) {
-      seasonPoints[b.rider_id] = (seasonPoints[b.rider_id] || 0) + b.points;
+    // Get race IDs for this series
+    const { data: seriesRaces } = await supabase
+      .from("races")
+      .select("id")
+      .eq("series", leagueSeries)
+      .eq("status", "completed");
+    const seriesRaceIds = (seriesRaces || []).map((r) => r.id);
+
+    if (seriesRaceIds.length > 0) {
+      const { data: results } = await supabase
+        .from("race_results")
+        .select("rider_id, points")
+        .in("rider_id", freeAgentIds)
+        .in("race_id", seriesRaceIds);
+      const { data: bonuses } = await supabase
+        .from("race_bonuses")
+        .select("rider_id, points")
+        .in("rider_id", freeAgentIds)
+        .in("race_id", seriesRaceIds);
+      for (const r of results || []) {
+        seasonPoints[r.rider_id] = (seasonPoints[r.rider_id] || 0) + r.points;
+      }
+      for (const b of bonuses || []) {
+        seasonPoints[b.rider_id] = (seasonPoints[b.rider_id] || 0) + b.points;
+      }
     }
   }
 
@@ -106,13 +142,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     };
   });
 
-  const { data: league } = await supabase
+  const { data: leagueMeta } = await supabase
     .from("leagues")
     .select("roster_size")
     .eq("id", id)
     .single();
 
-  return NextResponse.json({ freeAgents: freeAgentsWithPoints, myRoster, transactions, rosterSize: league!.roster_size });
+  return NextResponse.json({ freeAgents: freeAgentsWithPoints, myRoster, transactions, rosterSize: leagueMeta!.roster_size });
 }
 
 // POST — add/drop transaction

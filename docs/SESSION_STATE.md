@@ -4,7 +4,7 @@
 
 ## Status: Ready to draft
 
-All infrastructure for the MX 2026 season is in place. The next human action is to use the Renew Season button.
+All infrastructure for the MX 2026 season is in place. The league has been renewed. Draft can start any time before Round 1 (May 30, Fox Raceway).
 
 ## All migrations run ✅
 
@@ -14,23 +14,35 @@ All infrastructure for the MX 2026 season is in place. The next human action is 
 | `2026-05-04b_outdoor_motocross_schema.sql` | ✅ |
 | `2026-05-21_league_groups.sql` | ✅ |
 | `2026-05-22_mx_races.sql` | ✅ (11 MX rounds in races table) |
-| `2026-05-22_mx_rider_series.sql` | ✅ (52 riders: 24×450MX, 28×250MX) |
+| `2026-05-22_mx_rider_series.sql` | ✅ (52 factory riders seeded) |
 | `2026-05-28_league_archived.sql` | ✅ |
+| `2026-05-28_mx_rider_additions.sql` | ✅ (16 more riders added, Jett Lawrence # fixed) |
 
 ## What was built this session
 
-- **League franchise history** — `league_groups` table links seasons together. Franchise history page at `/groups/[id]` shows all past/current seasons as cards with Season Recap links.
-- **Renew Season flow** — Commissioner scrolls to bottom of league dashboard → "Renew Season" → picks series + lineup slots → archives SX league, clones it as MX league with same members, links both to franchise. No re-inviting needed.
-- **MX race schedule** — 11 rounds seeded (May 30 – Aug 29, 2026). Source: promotocross.com/schedule.
-- **MX rider seed** — 52 factory/semi-factory riders in `rider_series` with `series='mx'`. Source: promotocross.com/teams (2026 confirmed). Numbers and teams differ significantly from SX season.
-- **Races API series filter** — `GET /api/races?series=mx` now works. League dashboard fetches races filtered by `league.series` so correct "Next Race" shows.
-- **Leagues list** — archived leagues hidden from My Leagues.
+- **Auto-import cron adapted for MX** — Series-aware base URL (`results.promotocross.com` for MX), classifies "Moto 1"/"Moto 2" race types, emits correct bonus types (`moto1_winner_450`, `holeshot_moto1_450`, etc.), waits for overall before scoring.
+- **Draft page fixed for MX** — `/api/riders?series=mx` returns only MX riders with correct `450MX`/`250MX` classes. Draft picks show correct class labels. Class filter dropdown is series-aware.
+- **Lineup validation fixed for MX** — Reads class from `rider_series` for MX leagues instead of `riders` table (which has stale SX classes). Validates `450MX`/`250MX` counts against `lineup_450`/`lineup_250e`.
+- **Free agents fixed for MX** — Only shows riders in the MX series pool. Season points scoped to MX races only.
+- **Rider pool expanded** — 68 riders total (30×450MX, 38×250MX). Added 16 competitive non-factory riders from the Fox Raceway entry list. Jett Lawrence number corrected (#1 → #18).
+- **Injuries reset** — All 68 MX riders are `status='active'` in `rider_series`.
 
 ## Immediate next steps (in order)
 
-1. **Renew the SX league → MX** — Go to Bar 9 Fantasy league dashboard, scroll to bottom, click "Renew Season", pick Outdoor Motocross (MX), set lineup slots (suggest: 3×450MX, 2×250MX), confirm. This creates the MX league and archives SX.
-2. **Draft** — Both members draft in the new MX league before Round 1 (May 30, Fox Raceway).
-3. **Adapt auto-import cron for MX** — MX result format is different from SX: 2 motos per class + combined overall. The cron at `src/app/api/cron/auto-import/route.ts` needs to handle MX bonus types (`holeshot_moto1_450`, `moto1_winner_450`, etc.) and the promotocross.com result URLs.
+1. **Add more riders** — Many competitive riders from the full entry list still need to be added. Do this before drafting, ideally by checking entry list round-by-round as riders confirm. Focus on anyone who could realistically finish top 20-25.
+2. **Draft** — Both members draft in the MX league before Round 1 (May 30, Fox Raceway). `draft_status='waiting'`, roster_size=22, 8×450MX + 8×250MX starters.
+3. **Verify auto-import cron URL** — After Round 1 results post, check if `results.promotocross.com` is the correct base URL. If results don't auto-import, check the domain. May need a small URL fix.
+4. **Injury cron for MX** — The existing injury cron (`/api/cron/injury-report`) is SX-specific (scrapes supercrosslive.com entry lists). It will do nothing useful for MX. MX injury status management is manual for now (set status via admin or wait for post-race cron to mark riders out).
+
+## MX league (DB)
+
+- League ID: 3
+- `series`: 'mx'
+- `draft_status`: 'waiting'
+- `roster_size`: 22
+- `lineup_450`: 8 (450MX starters per week)
+- `lineup_250e`: 8 (250MX starters per week — column repurposed)
+- `lineup_250w`: 0 (not used for MX)
 
 ## MX schedule (confirmed 2026)
 
@@ -52,10 +64,12 @@ All infrastructure for the MX 2026 season is in place. The next human action is 
 
 | Topic | File |
 |---|---|
+| Auto-import cron (SX + MX) | `src/app/api/cron/auto-import/route.ts` |
+| Draft API | `src/app/api/leagues/[id]/draft/route.ts` |
+| Draft page | `src/app/leagues/[id]/draft/page.tsx` |
+| Lineup validation | `src/app/api/leagues/[id]/lineup/route.ts` |
+| Free agents | `src/app/api/leagues/[id]/free-agents/route.ts` |
+| Riders endpoint | `src/app/api/riders/route.ts` |
 | MX expansion plan | `docs/PLAN_OUTDOOR_MOTOCROSS.md` |
-| Franchise history page | `src/app/groups/[id]/page.tsx` |
-| Franchise API | `src/app/api/groups/route.ts` |
-| Renew season endpoint | `src/app/api/leagues/[id]/renew/route.ts` |
-| Auto-import cron | `src/app/api/cron/auto-import/route.ts` |
 | Series helpers | `src/lib/series.ts` |
 | Supabase project | `vprgvmtbxqunijwlnoui` |
