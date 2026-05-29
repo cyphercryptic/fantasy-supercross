@@ -1,60 +1,61 @@
 # Session State — pick up here next time
 
-**Last updated:** 2026-05-22
+**Last updated:** 2026-05-28
 
-## Where we left off
+## Status: Ready to draft
 
-All three pending migrations have been run successfully in Supabase:
-- `2026-05-04_unique_rider_per_league_roster.sql` ✅
-- `2026-05-04b_outdoor_motocross_schema.sql` ✅ (MX schema — adds `series` to races/leagues, creates `rider_series`)
-- `2026-05-21_league_groups.sql` ✅ (franchise history — adds `league_groups` table, `group_id` + `season_year` to leagues)
+All infrastructure for the MX 2026 season is in place. The next human action is to use the Renew Season button.
 
-SX 2026 season is complete (Salt Lake City, round 17, May 9). Season Recap page is live.
+## All migrations run ✅
 
-MX Round 1 (Fox Raceway, Pala CA) is **next weekend** (~May 30). Plenty of time.
+| Migration | Status |
+|---|---|
+| `2026-05-04_unique_rider_per_league_roster.sql` | ✅ |
+| `2026-05-04b_outdoor_motocross_schema.sql` | ✅ |
+| `2026-05-21_league_groups.sql` | ✅ |
+| `2026-05-22_mx_races.sql` | ✅ (11 MX rounds in races table) |
+| `2026-05-22_mx_rider_series.sql` | ✅ (52 riders: 24×450MX, 28×250MX) |
+| `2026-05-28_league_archived.sql` | ✅ |
 
-## Next priorities (in order)
+## What was built this session
 
-1. ~~**Insert the MX race schedule**~~ ✅ Done 2026-05-22 (11 rounds in `races` table with `series='mx'`)
-2. **Seed MX riders** — entry list not published yet (stale 2025 data found online). Check promotocross.com mid-week. Once live, run the rider seeder SQL (template in `migrations/2026-05-22_mx_races.sql` — riders portion still needs to be written against the real list).
-3. **Create the MX league** in the app (commissioner creates league with `series='mx'`, links it to franchise "Bar 9 Fantasy", season year 2026).
-4. **Draft.**
-5. **Adapt the auto-import cron** for MX result format (2 motos per class + combined overall).
+- **League franchise history** — `league_groups` table links seasons together. Franchise history page at `/groups/[id]` shows all past/current seasons as cards with Season Recap links.
+- **Renew Season flow** — Commissioner scrolls to bottom of league dashboard → "Renew Season" → picks series + lineup slots → archives SX league, clones it as MX league with same members, links both to franchise. No re-inviting needed.
+- **MX race schedule** — 11 rounds seeded (May 30 – Aug 29, 2026). Source: promotocross.com/schedule.
+- **MX rider seed** — 52 factory/semi-factory riders in `rider_series` with `series='mx'`. Source: promotocross.com/teams (2026 confirmed). Numbers and teams differ significantly from SX season.
+- **Races API series filter** — `GET /api/races?series=mx` now works. League dashboard fetches races filtered by `league.series` so correct "Next Race" shows.
+- **Leagues list** — archived leagues hidden from My Leagues.
 
-## League franchise history (just built)
+## Immediate next steps (in order)
 
-New feature: `league_groups` table links multiple season-leagues under one franchise.
+1. **Renew the SX league → MX** — Go to Bar 9 Fantasy league dashboard, scroll to bottom, click "Renew Season", pick Outdoor Motocross (MX), set lineup slots (suggest: 3×450MX, 2×250MX), confirm. This creates the MX league and archives SX.
+2. **Draft** — Both members draft in the new MX league before Round 1 (May 30, Fox Raceway).
+3. **Adapt auto-import cron for MX** — MX result format is different from SX: 2 motos per class + combined overall. The cron at `src/app/api/cron/auto-import/route.ts` needs to handle MX bonus types (`holeshot_moto1_450`, `moto1_winner_450`, etc.) and the promotocross.com result URLs.
 
-- New page: `/groups/[id]` — shows all seasons in a franchise
-- Create league form now has Season Year + Franchise dropdown
-- League dashboard shows franchise breadcrumb if linked
-- When creating the MX league, link it to the same franchise as the SX league (create "Bar 9 Fantasy" franchise from the create form)
+## MX schedule (confirmed 2026)
 
-## Key files & references
+| Round | Name | Date | Location |
+|---|---|---|---|
+| 1 | Fox Raceway National | May 30 | Pala, CA |
+| 2 | Prairie City National | Jun 6 | Rancho Cordova, CA |
+| 3 | Thunder Valley National | Jun 13 | Lakewood, CO |
+| 4 | High Point National | Jun 20 | Mt. Morris, PA |
+| 5 | RedBud National | Jul 4 | Buchanan, MI |
+| 6 | Southwick National | Jul 11 | Southwick, MA |
+| 7 | Spring Creek National | Jul 18 | Millville, MN |
+| 8 | Washougal National | Jul 25 | Washougal, WA |
+| 9 | Unadilla National | Aug 15 | New Berlin, NY |
+| 10 | Budds Creek National | Aug 22 | Mechanicsville, MD |
+| 11 | Ironman National | Aug 29 | Crawfordsville, IN |
+
+## Key files
 
 | Topic | File |
 |---|---|
-| Outdoor MX plan | `docs/PLAN_OUTDOOR_MOTOCROSS.md` |
-| Series helpers | `src/lib/series.ts` |
-| Race region helpers | `src/lib/race-region.ts` |
-| Auto-import cron | `src/app/api/cron/auto-import/route.ts` |
-| Franchise API | `src/app/api/groups/route.ts` |
+| MX expansion plan | `docs/PLAN_OUTDOOR_MOTOCROSS.md` |
 | Franchise history page | `src/app/groups/[id]/page.tsx` |
-| Season recap page | `src/app/leagues/[id]/season-recap/page.tsx` |
+| Franchise API | `src/app/api/groups/route.ts` |
+| Renew season endpoint | `src/app/api/leagues/[id]/renew/route.ts` |
+| Auto-import cron | `src/app/api/cron/auto-import/route.ts` |
+| Series helpers | `src/lib/series.ts` |
 | Supabase project | `vprgvmtbxqunijwlnoui` |
-
-## MX schedule (confirm exact dates vs AMA)
-
-| Round | Name | Date | Track |
-|---|---|---|---|
-| 1 | Fox Raceway | ~May 30 | Pala, CA |
-| 2 | Thunder Valley | May 30 | Lakewood, CO |
-| 3 | High Point | Jun 6 | Mt Morris, PA |
-| 4 | RedBud | Jul 4 | Buchanan, MI |
-| 5 | Southwick | Jul 11 | Southwick, MA |
-| 6 | Spring Creek | Jul 18 | Millville, MN |
-| 7 | Washougal | Jul 25 | Washougal, WA |
-| 8 | Unadilla | Aug 8 | New Berlin, NY |
-| 9 | Budds Creek | Aug 15 | Mechanicsville, MD |
-| 10 | Ironman | Aug 22 | Crawfordsville, IN |
-| 11 | Glen Helen | Aug 29 | San Bernardino, CA |
