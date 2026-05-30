@@ -44,9 +44,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { data: league } = await supabase
     .from("leagues")
-    .select("id, name, lineup_450, lineup_250e, lineup_250w, draft_status")
+    .select("id, name, lineup_450, lineup_250e, lineup_250w, draft_status, series")
     .eq("id", id)
     .single();
+
+  const series = (league?.series as string) || "sx";
 
   // Get all league members for the selector dropdown
   const { data: allMembers } = await supabase
@@ -61,10 +63,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     username: ((m as Record<string, unknown>).app_users as Record<string, unknown>)?.username as string || "Unknown",
   }));
 
-  // Get upcoming race
+  // Get upcoming race for this league's series
   const { data: upcomingRace } = await supabase
     .from("races")
     .select("*")
+    .eq("series", series)
     .eq("status", "upcoming")
     .order("round_number", { ascending: true })
     .limit(1)
@@ -91,6 +94,31 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     .eq("user_id", targetUserId);
 
   const roster = (rosterEntries || []).map((e) => e.riders as unknown as unknown as Record<string, unknown>);
+
+  // For non-SX series the riders.class column holds stale SX classes; override
+  // it with the per-series class so lineup grouping (e.g. 450MX/250MX) is right.
+  if (series !== "sx") {
+    const ids = [
+      ...roster.map((r) => r.id as number),
+      ...lineup.map((r) => r.id as number),
+    ];
+    if (ids.length > 0) {
+      const { data: seriesRows } = await supabase
+        .from("rider_series")
+        .select("rider_id, class")
+        .eq("series", series)
+        .in("rider_id", ids);
+      const classMap = new Map((seriesRows || []).map((s) => [s.rider_id, s.class as string]));
+      for (const r of roster) {
+        const c = classMap.get(r.id as number);
+        if (c) r.class = c;
+      }
+      for (const r of lineup) {
+        const c = classMap.get(r.id as number);
+        if (c) r.class = c;
+      }
+    }
+  }
 
   return NextResponse.json({
     team_name: member.team_name,

@@ -25,6 +25,7 @@ interface League {
   lineup_250e: number;
   lineup_250w: number;
   draft_status: string;
+  series: string;
 }
 
 interface Race {
@@ -134,7 +135,10 @@ function EditLineupModal({
   const selectedRaceObj = races.find((r) => r.id === selectedRace);
   const isRaceLocked = selectedRaceObj?.status === "completed" ||
     (!!selectedRaceObj?.race_time && new Date(selectedRaceObj.race_time) <= new Date());
-  const raceRegion = get250Region(selectedRaceObj?.round_number ?? null);
+  // MX (and other non-SX series) use a single 450/250 split with no East/West
+  // region; SX uses per-round 250 region (East/West/Showdown).
+  const isMx = (data.league.series || "sx") !== "sx";
+  const raceRegion = isMx ? null : get250Region(selectedRaceObj?.round_number ?? null);
 
   const show250E = raceRegion === "east" || raceRegion === "showdown" || raceRegion === null;
   const show250W = raceRegion === "west" || raceRegion === "showdown" || raceRegion === null;
@@ -144,8 +148,8 @@ function EditLineupModal({
   }
 
   function getClassLimit(cls: string) {
-    if (cls === "450") return data.league.lineup_450;
-    if (cls === "250E") return data.league.lineup_250e;
+    if (cls === "450" || cls === "450MX") return data.league.lineup_450;
+    if (cls === "250E" || cls === "250MX") return data.league.lineup_250e;
     if (cls === "250W") return data.league.lineup_250w;
     return 0;
   }
@@ -160,17 +164,24 @@ function EditLineupModal({
     setSelectedRiders(next);
   }
 
-  const allClasses = [
-    { key: "450", label: "450 Class", show: true },
-    { key: "250E", label: "250 East", show: show250E },
-    { key: "250W", label: "250 West", show: show250W },
-  ];
+  const allClasses = isMx
+    ? [
+        { key: "450MX", label: "450 Class", show: true },
+        { key: "250MX", label: "250 Class", show: true },
+      ]
+    : [
+        { key: "450", label: "450 Class", show: true },
+        { key: "250E", label: "250 East", show: show250E },
+        { key: "250W", label: "250 West", show: show250W },
+      ];
   const activeClasses = allClasses.filter((c) => c.show);
 
-  const isLineupValid =
-    getClassCount("450") === data.league.lineup_450 &&
-    (show250E ? getClassCount("250E") === data.league.lineup_250e : true) &&
-    (show250W ? getClassCount("250W") === data.league.lineup_250w : true);
+  const isLineupValid = isMx
+    ? getClassCount("450MX") === data.league.lineup_450 &&
+      getClassCount("250MX") === data.league.lineup_250e
+    : getClassCount("450") === data.league.lineup_450 &&
+      (show250E ? getClassCount("250E") === data.league.lineup_250e : true) &&
+      (show250W ? getClassCount("250W") === data.league.lineup_250w : true);
 
   async function handleSaveLineup() {
     if (!selectedRace || !isLineupValid) return;
@@ -431,9 +442,12 @@ export default function TeamPage() {
 
   useEffect(() => { loadTeamData(viewingUserId); }, [loadTeamData, viewingUserId]);
 
-  // Load races and stats
+  // Load races and stats (scoped to this league's series so the lineup race
+  // picker only shows this series' rounds and auto-selects the right one)
+  const leagueSeries = data?.league?.series;
   useEffect(() => {
-    fetch("/api/races").then((r) => r.json()).then((raceData: Race[]) => {
+    if (!leagueSeries) return;
+    fetch(`/api/races?series=${leagueSeries}`).then((r) => r.json()).then((raceData: Race[]) => {
       setRaces(raceData);
       // Load lineup for upcoming race to determine starters
       const upcoming = raceData.find((r) => r.status === "upcoming");
@@ -451,7 +465,7 @@ export default function TeamPage() {
       }
     });
     fetch(`/api/leagues/${leagueId}/rider-stats`).then((r) => r.json()).then(setStats);
-  }, [leagueId, viewingUserId]);
+  }, [leagueId, viewingUserId, leagueSeries]);
 
   // Load free agent data
   const loadFaData = useCallback(() => {
@@ -544,12 +558,19 @@ export default function TeamPage() {
     return matchesSearch && matchesClass;
   }) : [];
 
-  // Build roster grouped by class with starters first
-  const classGroups = [
-    { key: "450", label: "450 Class" },
-    { key: "250E", label: "250 East" },
-    { key: "250W", label: "250 West" },
-  ];
+  // Build roster grouped by class with starters first (series-aware: MX is a
+  // single 450/250 split, SX splits 250 into East/West).
+  const isMx = (data.league.series || "sx") !== "sx";
+  const classGroups = isMx
+    ? [
+        { key: "450MX", label: "450 Class" },
+        { key: "250MX", label: "250 Class" },
+      ]
+    : [
+        { key: "450", label: "450 Class" },
+        { key: "250E", label: "250 East" },
+        { key: "250W", label: "250 West" },
+      ];
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
