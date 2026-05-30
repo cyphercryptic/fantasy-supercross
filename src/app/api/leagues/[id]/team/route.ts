@@ -105,17 +105,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (ids.length > 0) {
       const { data: seriesRows } = await supabase
         .from("rider_series")
-        .select("rider_id, class")
+        .select("rider_id, class, status")
         .eq("series", series)
         .in("rider_id", ids);
       const classMap = new Map((seriesRows || []).map((s) => [s.rider_id, s.class as string]));
-      for (const r of roster) {
+      const statusMap = new Map((seriesRows || []).map((s) => [s.rider_id, s.status as string]));
+      for (const r of [...roster, ...lineup]) {
         const c = classMap.get(r.id as number);
         if (c) r.class = c;
-      }
-      for (const r of lineup) {
-        const c = classMap.get(r.id as number);
-        if (c) r.class = c;
+        const st = statusMap.get(r.id as number);
+        if (st) r.status = st;
       }
     }
   }

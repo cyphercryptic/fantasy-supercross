@@ -105,7 +105,23 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     .select("riders(*)")
     .eq("league_id", id)
     .eq("user_id", user.id);
-  const myRoster = (rosterEntries || []).map((e) => e.riders);
+  const myRoster = (rosterEntries || []).map((e) => e.riders as unknown as Record<string, unknown>);
+
+  // For non-SX series, riders.class/status are stale SX values — override from
+  // rider_series so the roster shows the right class and injury status.
+  if (leagueSeries !== "sx" && myRoster.length > 0) {
+    const rosterIds = myRoster.map((r) => r.id as number);
+    const { data: seriesRows } = await supabase
+      .from("rider_series")
+      .select("rider_id, class, status")
+      .eq("series", leagueSeries)
+      .in("rider_id", rosterIds);
+    const map = new Map((seriesRows || []).map((s) => [s.rider_id, s]));
+    for (const r of myRoster) {
+      const s = map.get(r.id as number);
+      if (s) { r.class = s.class; r.status = s.status; }
+    }
+  }
 
   // Recent transactions
   const { data: rawTxns } = await supabase
