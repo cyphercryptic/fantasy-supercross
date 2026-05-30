@@ -164,7 +164,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     .eq("id", id)
     .single();
 
-  return NextResponse.json({ freeAgents: freeAgentsWithPoints, myRoster, transactions, rosterSize: leagueMeta!.roster_size });
+  return NextResponse.json({ freeAgents: freeAgentsWithPoints, myRoster, transactions, rosterSize: leagueMeta!.roster_size, series: leagueSeries });
 }
 
 // POST — add/drop transaction

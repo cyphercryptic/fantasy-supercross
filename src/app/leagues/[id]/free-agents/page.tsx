@@ -38,6 +38,7 @@ interface FreeAgentData {
   myRoster: Rider[];
   transactions: Transaction[];
   rosterSize: number;
+  series: string;
 }
 
 export default function FreeAgentsPage() {
@@ -160,12 +161,12 @@ export default function FreeAgentsPage() {
       return matchesSearch && matchesClass;
     });
 
-  // Group roster by class
-  const rosterByClass = {
-    "450": data.myRoster.filter((r) => r.class === "450"),
-    "250E": data.myRoster.filter((r) => r.class === "250E"),
-    "250W": data.myRoster.filter((r) => r.class === "250W"),
-  };
+  // Series-aware class groups (MX is a single 450/250 split; SX splits 250
+  // into East/West). riders carry their series class (450MX/250MX for MX).
+  const isMx = (data.series || "sx") !== "sx";
+  const classGroups = isMx
+    ? [{ key: "450MX", label: "450 Class" }, { key: "250MX", label: "250 Class" }]
+    : [{ key: "450", label: "450 Class" }, { key: "250E", label: "250 East" }, { key: "250W", label: "250 West" }];
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -230,12 +231,11 @@ export default function FreeAgentsPage() {
               <p className="text-gray-400 text-xs mt-2">Your roster is full. Select a rider to drop to make room.</p>
             </div>
             <div className="p-4 overflow-y-auto max-h-[50vh] space-y-4">
-              {(["450", "250E", "250W"] as const).map((cls) => {
-                const label = cls === "450" ? "450 Class" : cls === "250E" ? "250 East" : "250 West";
-                const riders = rosterByClass[cls];
+              {classGroups.map(({ key, label }) => {
+                const riders = data.myRoster.filter((r) => r.class === key);
                 if (riders.length === 0) return null;
                 return (
-                  <div key={cls}>
+                  <div key={key}>
                     <h4 className="text-xs font-bold text-[#8A8A8A] uppercase tracking-widest mb-2">{label}</h4>
                     <div className="space-y-2">
                       {riders.map((rider) => (
@@ -364,9 +364,9 @@ export default function FreeAgentsPage() {
               className="bg-[#EBE7E2] border border-[#D4D0CB] rounded-lg px-3 py-2 text-[#1A1A1A] text-sm"
             >
               <option value="all">All Classes</option>
-              <option value="450">450</option>
-              <option value="250E">250 East</option>
-              <option value="250W">250 West</option>
+              {classGroups.map(({ key, label }) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
             </select>
           </div>
 
