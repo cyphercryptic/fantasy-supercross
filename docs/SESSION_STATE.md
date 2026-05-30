@@ -1,90 +1,84 @@
 # Session State — pick up here next time
 
-**Last updated:** 2026-05-29
+**Last updated:** 2026-05-30
 
-## Status: Ready to draft (full rider pool loaded)
+## Status: MX 2026 season underway — Round 1 (Fox Raceway) is TODAY
 
-All infrastructure for the MX 2026 season is in place. The league has been renewed. Draft can start any time before Round 1 (May 30, Fox Raceway).
+Draft is complete, rosters saved, lineups locking at gate drop. The app is fully MX-aware end to end (draft, lineup, schedule, settings, stats, status). Everything below is live in production (`fantasy-supercross.vercel.app`, auto-deploys from `main`).
 
-**2026-05-29:** Rider pool expanded to the **complete Fox Raceway Round 1 entry list** — 146 riders total (71×450MX, 75×250MX), all `active`. Added 78 riders (41×450MX, 37×250MX) from the official racerxonline.com 450/250 entry lists. All existing SX-era riders kept; marquee names not on the Round 1 entry list (Tomac, Roczen, Prado, Plessinger, Hampshire, M.Stewart, Savatgy, McElrath; Beaumer, Swoll, Bennick, Adams) left `active` by decision — they may race later rounds. Applied via service-role script; recorded in `migrations/2026-05-29_mx_full_entry_list.sql`.
+## Open items
 
-**2026-05-29 (mock-draft test + bug fixes):** Ran a full 44-pick mock draft through the real API and fixed several issues found:
-- **`league_rosters` never populated** — the draft upsert used `ON CONFLICT (league_id,user_id,rider_id)` but no matching unique constraint existed, so every upsert silently failed → empty rosters after a draft. Added the constraint (`migrations/2026-05-29b_league_rosters_unique.sql`). **Connor ran this in the Supabase SQL editor.**
-- **Auto-pick pool leak** — the timeout auto-pick (`draft/route.ts` PATCH) picked the lowest global rider id with no series filter; for MX it could assign an SX-only rider with no MX class. Now picks from the `rider_series` pool for the league's series. *(code change, uncommitted)*
-- **Draft timer dead** — timer parsing did `pickStartedAt + "Z"` but Supabase returns `+00:00` offsets → `Invalid Date` → NaN. Now detects existing tz info. *(code change)*
-- **Draft page crash/hang resilience** — `loadDraft` now ignores non-200 responses (kept crashing render on transient error bodies lacking `members`); 401 shows a "Please log in" screen; polls while `draft` is null so it self-recovers. *(code change)*
-- **Recent Picks + Coming Up ticker** now highlighted in each team's assigned color (`BIKE_BRANDS[brand].color` from `team_logo`). *(code change)*
-- **Rider bikes backfilled** — 93 MX riders had null `team` (no bike icon on the draft board); filled from entry-list bikes (`migrations/2026-05-29c_mx_rider_bikes.sql`, applied via script).
-- Same `+ "Z"` timestamp bug still latent (display-only) in `team/page.tsx:1096` and `free-agents/page.tsx:459` — NOT yet fixed.
-- Code changes are live in the running dev server but **uncommitted** as of handoff.
+1. **tsfranklin (user 6) lineup for Round 1** — as of last check user 4 had set 16, user 6 had **0**. He must set 8×450 + 8×250 before gate drop (Fox Raceway locks **2026-05-30 20:00 UTC = 1 PM PT**).
+2. **Verify the first MX results import** — the auto-import cron runs nightly at **06:00 UTC (~11 PM PT)**. Round 1 is the first-ever live MX import; the `results.promotocross.com` domain + URL structure were confirmed correct and **Fox Raceway = event_id 506003**. After the cron fires (Sun ~06:00 UTC), confirm Round 1 scored (race_results + race_bonuses populated, race status flipped to `completed`, leaderboard shows points). Fix parsing if needed. *(Optionally pre-set `event_id='506003'` on round 1 to skip auto-discovery — SQL was provided, confirm if run.)*
+3. **MX injury status is manual** — the injury cron (`/api/cron/injury-report`) is SX-only. Set `rider_series.status='out'` manually when MX riders get hurt. Note: `riders.status` holds stale SX injuries (24 riders incl. Jett Lawrence) — MX UI now reads `rider_series.status` everywhere, so ignore `riders.status` for MX.
+4. **Latent (display-only):** `team/page.tsx:1096` and `free-agents/page.tsx:459` still append `"Z"` to `created_at` for transaction dates — may show "Invalid Date". Not fixed.
 
-## All migrations run ✅
+## What was done 2026-05-30 (this session)
+
+All committed/pushed to `main` and live:
+- **Full rider pool** — 146 riders (71×450MX, 75×250MX) from the official Fox Raceway entry list; bikes backfilled (drives team color). All `active` in `rider_series`.
+- **Roster size → 20** (was 22), kept 8×450 / 8×250. League settings card made series-aware (single "250 Slots" for MX, not East/West).
+- **Draft fixes:** `league_rosters` unique constraint (draft now saves rosters), auto-pick draws from series pool, dead timer fixed (`+00:00` parsing), draft-page resilience (ignores non-200, login screen on 401, self-recovers), Recent Picks + Coming Up ticker tinted with each team's bike-brand color.
+- **Schedule fixed:** `races` id sequence was behind `max(id)`, so the original MX seed silently dropped 10 of 11 rounds (only R4 survived); resynced sequence + restored all 11. Made `/schedule` series-aware (SX/MX toggle, no bogus "250 WEST" on MX).
+- **Race times set** — all 11 rounds have `race_time` = first-moto gate drop (1 PM local per promotocross TV schedule). Lineups lock at gate drop. Round 2 renamed to official "Hangtown Motocross Classic".
+- **Lineup (team page) made MX-aware** — race picker scoped to series + auto-selects next race; team API returns `series`, scopes upcoming race, and remaps roster/lineup **class + status** from `rider_series` (riders.class/status are stale SX). 450MX/250MX groups, no East/West.
+- **Stats scoped to series** — rider-stats only counts the league's series races (no more SX-season points on MX teams).
+- **Lineup lock fix** — `isRaceLocked` no longer locks at midnight of race day when `race_time` is unset (now that all races have race_time this is moot, but it's the correct fallback).
+
+## MX league (DB)
+
+- League ID: **3**, `series='mx'`, `draft_status='completed'`, `roster_size=20`
+- `lineup_450=8` (450MX starters/wk), `lineup_250e=8` (250MX starters — column repurposed), `lineup_250w=0` (unused)
+- Members: user **4** = connorfranklin499 (commissioner, Connor), user **6** = tsfranklin (Connor's dad, real user)
+- 40 roster rows (20 per user)
+
+## MX schedule (live, race_time = gate drop)
+
+| R | Name | Date | race_time (UTC) | Local gate drop |
+|---|---|---|---|---|
+| 1 | Fox Raceway National | May 30 | 20:00 | 1 PM PT |
+| 2 | Hangtown Motocross Classic | Jun 6 | 20:00 | 1 PM PT |
+| 3 | Thunder Valley National | Jun 13 | 19:00 | 1 PM MT |
+| 4 | High Point National | Jun 20 | 17:00 | 1 PM ET |
+| 5 | RedBud National | Jul 4 | 17:00 | 1 PM ET |
+| 6 | Southwick National | Jul 11 | 17:00 | 1 PM ET |
+| 7 | Spring Creek National | Jul 18 | 18:00 | 1 PM CT |
+| 8 | Washougal National | Jul 25 | 20:00 | 1 PM PT |
+| 9 | Unadilla National | Aug 15 | 17:00 | 1 PM ET |
+| 10 | Budds Creek National | Aug 22 | 17:00 | 1 PM ET |
+| 11 | Ironman National | Aug 29 | 17:00 | 1 PM ET |
+
+## Migrations (all run)
 
 | Migration | Status |
 |---|---|
 | `2026-05-04_unique_rider_per_league_roster.sql` | ✅ |
 | `2026-05-04b_outdoor_motocross_schema.sql` | ✅ |
 | `2026-05-21_league_groups.sql` | ✅ |
-| `2026-05-22_mx_races.sql` | ✅ (11 MX rounds in races table) |
-| `2026-05-22_mx_rider_series.sql` | ✅ (52 factory riders seeded) |
+| `2026-05-22_mx_races.sql` | ✅ |
+| `2026-05-22_mx_rider_series.sql` | ✅ |
 | `2026-05-28_league_archived.sql` | ✅ |
-| `2026-05-28_mx_rider_additions.sql` | ✅ (16 more riders added, Jett Lawrence # fixed) |
-| `2026-05-29_mx_full_entry_list.sql` | ✅ (78 riders added → 146 total, full Round 1 entry list) |
-| `2026-05-29b_league_rosters_unique.sql` | ✅ (unique constraint so draft populates rosters) |
-| `2026-05-29c_mx_rider_bikes.sql` | ✅ (backfilled bikes for 93 null-team MX riders, applied via script) |
-
-## What was built this session
-
-- **Auto-import cron adapted for MX** — Series-aware base URL (`results.promotocross.com` for MX), classifies "Moto 1"/"Moto 2" race types, emits correct bonus types (`moto1_winner_450`, `holeshot_moto1_450`, etc.), waits for overall before scoring.
-- **Draft page fixed for MX** — `/api/riders?series=mx` returns only MX riders with correct `450MX`/`250MX` classes. Draft picks show correct class labels. Class filter dropdown is series-aware.
-- **Lineup validation fixed for MX** — Reads class from `rider_series` for MX leagues instead of `riders` table (which has stale SX classes). Validates `450MX`/`250MX` counts against `lineup_450`/`lineup_250e`.
-- **Free agents fixed for MX** — Only shows riders in the MX series pool. Season points scoped to MX races only.
-- **Rider pool expanded** — 68 riders total (30×450MX, 38×250MX). Added 16 competitive non-factory riders from the Fox Raceway entry list. Jett Lawrence number corrected (#1 → #18).
-- **Injuries reset** — All 68 MX riders are `status='active'` in `rider_series`.
-
-## Immediate next steps (in order)
-
-1. ✅ **Rider pool complete** — Full Round 1 entry list loaded (146 riders). For later rounds, re-check entry lists as the series moves venues and add any new confirmed entries.
-2. **Draft** — Both members draft in the MX league before Round 1 (May 30, Fox Raceway). `draft_status='waiting'`, roster_size=22, 8×450MX + 8×250MX starters.
-3. **Verify auto-import cron URL** — After Round 1 results post, check if `results.promotocross.com` is the correct base URL. If results don't auto-import, check the domain. May need a small URL fix.
-4. **Injury cron for MX** — The existing injury cron (`/api/cron/injury-report`) is SX-specific (scrapes supercrosslive.com entry lists). It will do nothing useful for MX. MX injury status management is manual for now (set status via admin or wait for post-race cron to mark riders out).
-
-## MX league (DB)
-
-- League ID: 3
-- `series`: 'mx'
-- `draft_status`: 'waiting'
-- `roster_size`: 22
-- `lineup_450`: 8 (450MX starters per week)
-- `lineup_250e`: 8 (250MX starters per week — column repurposed)
-- `lineup_250w`: 0 (not used for MX)
-
-## MX schedule (confirmed 2026)
-
-| Round | Name | Date | Location |
-|---|---|---|---|
-| 1 | Fox Raceway National | May 30 | Pala, CA |
-| 2 | Prairie City National | Jun 6 | Rancho Cordova, CA |
-| 3 | Thunder Valley National | Jun 13 | Lakewood, CO |
-| 4 | High Point National | Jun 20 | Mt. Morris, PA |
-| 5 | RedBud National | Jul 4 | Buchanan, MI |
-| 6 | Southwick National | Jul 11 | Southwick, MA |
-| 7 | Spring Creek National | Jul 18 | Millville, MN |
-| 8 | Washougal National | Jul 25 | Washougal, WA |
-| 9 | Unadilla National | Aug 15 | New Berlin, NY |
-| 10 | Budds Creek National | Aug 22 | Mechanicsville, MD |
-| 11 | Ironman National | Aug 29 | Crawfordsville, IN |
+| `2026-05-28_mx_rider_additions.sql` | ✅ |
+| `2026-05-29_mx_full_entry_list.sql` | ✅ (→146 riders) |
+| `2026-05-29b_league_rosters_unique.sql` | ✅ (draft saves rosters) |
+| `2026-05-29c_mx_rider_bikes.sql` | ✅ (bikes/colors) |
+| `2026-05-30_fix_mx_races.sql` | ✅ (seq resync + restore 11 rounds) |
+| `2026-05-30_mx_race_times.sql` | ✅ (gate-drop locks + Hangtown rename) |
 
 ## Key files
 
 | Topic | File |
 |---|---|
 | Auto-import cron (SX + MX) | `src/app/api/cron/auto-import/route.ts` |
-| Draft API | `src/app/api/leagues/[id]/draft/route.ts` |
-| Draft page | `src/app/leagues/[id]/draft/page.tsx` |
+| Draft API / page | `src/app/api/leagues/[id]/draft/route.ts` · `src/app/leagues/[id]/draft/page.tsx` |
+| Team page (roster + Edit Lineup modal) | `src/app/leagues/[id]/team/page.tsx` |
+| Team API (series class/status override) | `src/app/api/leagues/[id]/team/route.ts` |
 | Lineup validation | `src/app/api/leagues/[id]/lineup/route.ts` |
 | Free agents | `src/app/api/leagues/[id]/free-agents/route.ts` |
+| Rider stats (series-scoped) | `src/app/api/leagues/[id]/rider-stats/route.ts` |
+| Race lock | `src/lib/race-lock.ts` |
+| Schedule page (series toggle) | `src/app/schedule/page.tsx` |
 | Riders endpoint | `src/app/api/riders/route.ts` |
-| MX expansion plan | `docs/PLAN_OUTDOOR_MOTOCROSS.md` |
 | Series helpers | `src/lib/series.ts` |
-| Supabase project | `vprgvmtbxqunijwlnoui` |
+| Supabase project | `vprgvmtbxqunijwlnoui` (MCP can't reach it — use service-role key / paste SQL) |
+| Production | `fantasy-supercross.vercel.app` (Vercel, git auto-deploy; MCP can't see it — use `vercel` CLI) |
