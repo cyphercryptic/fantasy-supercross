@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { getPointsForPosition } from "@/lib/scoring";
+import { getPointsForPosition, getMxMotoPoints } from "@/lib/scoring";
 import { RIDER_ALIASES } from "@/lib/rider-aliases";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -314,18 +315,9 @@ export async function GET(req: NextRequest) {
         const mainCount250 = eventRaces.filter((r) => r.type === "main_250").length;
         const looksLikeTripleCrown = !isMX && (mainCount450 > 1 || mainCount250 > 1);
 
-        // For MX: wait for overall before importing (motos are bonus-only)
-        // For Triple Crown: same — wait for overall
-        if (isMX && hasMotoResults && !hasOverallResults) {
-          results.push({
-            raceId: race.id,
-            raceName: race.name,
-            status: "waiting-mx-overall",
-            resultsImported: 0,
-            bonusCount: 0,
-          });
-          continue;
-        }
+        // MX now scores each moto individually as it posts (incremental), so
+        // we no longer wait for the overall — we score whatever motos are up.
+        // Triple Crown (SX) still waits for the overall.
         if (looksLikeTripleCrown && !hasOverallResults) {
           results.push({
             raceId: race.id,
@@ -351,6 +343,7 @@ export async function GET(req: NextRequest) {
         const mainResults: { type: string; results: string[] }[] = [];
         const overallResults: { type: string; results: string[] }[] = [];
         const individualMains: { type: string; results: string[]; name: string }[] = [];
+        const mxMotos: { cls: string; finishOrder: string[] }[] = [];
         const bonuses: { riderId: number; type: string }[] = [];
 
         for (const eventRace of eventRaces) {
@@ -392,11 +385,10 @@ export async function GET(req: NextRequest) {
           if (isMoto1 || isMoto2) {
             const classPrefix = (eventRace.type === "moto1_450" || eventRace.type === "moto2_450") ? "450" : "250";
             const motoNum = isMoto1 ? "1" : "2";
-            // Store as individualMains so we can fall back to motos if overall never posts
-            individualMains.push({ type: `main_${classPrefix}`, results: finishOrder, name: eventRace.name });
-
-            const winner = findRider(finishOrder[0]);
-            if (winner) bonuses.push({ riderId: winner.id, type: `moto${motoNum}_winner_${classPrefix}` });
+            // Each moto is scored individually (position points summed per rider
+            // below). No moto-winner bonus — a moto win is already worth its
+            // position points. Holeshot still earns +1 per moto.
+            mxMotos.push({ cls: classPrefix, finishOrder });
 
             if (holeshotRider) {
               const hsRider = findRider(holeshotRider);
@@ -439,40 +431,59 @@ export async function GET(req: NextRequest) {
           }
         }
 
-        // Use overall for scoring when available (MX always; Triple Crown when detected)
-        const isTripleCrown = !isMX && (mainCount450 > 1 || mainCount250 > 1 || individualMains.some((m) => m.name.includes("#1") || m.name.includes("#2") || m.name.includes("#3")));
-        if ((isMX || isTripleCrown) && overallResults.length > 0) {
-          for (const overall of overallResults) {
-            mainResults.push(overall);
-          }
-        } else {
-          for (const main of individualMains) {
-            mainResults.push(main);
-          }
-        }
-
         // Save results and track unmatched riders
         const upsertData: { race_id: number; rider_id: number; position: number; points: number }[] = [];
         const unmatchedRiders: { name: string; position: number; points: number; raceClass: string }[] = [];
         let resultsImported = 0;
 
-        for (const main of mainResults) {
-          const raceClass = main.type === "main_450" ? "450" : "250";
-          for (let i = 0; i < main.results.length; i++) {
-            const position = i + 1;
-            const riderName = main.results[i];
-            const rider = findRider(riderName);
-            const pts = getPointsForPosition(position);
-            if (rider) {
-              upsertData.push({
-                race_id: race.id,
-                rider_id: rider.id,
-                position,
-                points: pts,
-              });
-              resultsImported++;
-            } else if (pts > 0) {
-              unmatchedRiders.push({ name: riderName, position, points: pts, raceClass });
+        if (isMX) {
+          // MX: score each moto's positions and SUM per rider (one result row
+          // per rider per event). Re-runs recompute from all posted motos, so
+          // scoring updates live as moto 1, moto 2, etc. come in. The stored
+          // position is the rider's running average finish across their motos.
+          const agg = new Map<number, { points: number; positions: number[] }>();
+          for (const moto of mxMotos) {
+            for (let i = 0; i < moto.finishOrder.length; i++) {
+              const position = i + 1;
+              const rider = findRider(moto.finishOrder[i]);
+              const pts = getMxMotoPoints(position);
+              if (rider) {
+                const a = agg.get(rider.id) || { points: 0, positions: [] };
+                a.points += pts;
+                a.positions.push(position);
+                agg.set(rider.id, a);
+              } else if (pts > 0) {
+                unmatchedRiders.push({ name: moto.finishOrder[i], position, points: pts, raceClass: moto.cls });
+              }
+            }
+          }
+          for (const [riderId, a] of agg) {
+            const avgPos = Math.round(a.positions.reduce((s, p) => s + p, 0) / a.positions.length);
+            upsertData.push({ race_id: race.id, rider_id: riderId, position: avgPos, points: a.points });
+            resultsImported++;
+          }
+        } else {
+          // SX (and Triple Crown): score the overall when available, else the mains.
+          const isTripleCrown = mainCount450 > 1 || mainCount250 > 1 || individualMains.some((m) => m.name.includes("#1") || m.name.includes("#2") || m.name.includes("#3"));
+          if (isTripleCrown && overallResults.length > 0) {
+            for (const overall of overallResults) mainResults.push(overall);
+          } else {
+            for (const main of individualMains) mainResults.push(main);
+          }
+
+          for (const main of mainResults) {
+            const raceClass = main.type === "main_450" ? "450" : "250";
+            for (let i = 0; i < main.results.length; i++) {
+              const position = i + 1;
+              const riderName = main.results[i];
+              const rider = findRider(riderName);
+              const pts = getPointsForPosition(position);
+              if (rider) {
+                upsertData.push({ race_id: race.id, rider_id: rider.id, position, points: pts });
+                resultsImported++;
+              } else if (pts > 0) {
+                unmatchedRiders.push({ name: riderName, position, points: pts, raceClass });
+              }
             }
           }
         }
@@ -493,8 +504,13 @@ export async function GET(req: NextRequest) {
           await supabase.from("race_bonuses").insert(bonusData);
         }
 
-        // Mark race as completed
-        await supabase.from("races").update({ status: "completed" }).eq("id", race.id);
+        // Mark race completed. For MX we keep it "upcoming" until the overall
+        // posts (event over) so scoring keeps refreshing as motos come in;
+        // SX completes as soon as results are imported.
+        const eventComplete = !isMX || hasOverallResults;
+        if (eventComplete) {
+          await supabase.from("races").update({ status: "completed" }).eq("id", race.id);
+        }
 
         // Notify via n8n webhook if there are unmatched riders who scored points
         let webhookError: string | undefined;
@@ -528,7 +544,7 @@ export async function GET(req: NextRequest) {
         results.push({
           raceId: race.id,
           raceName: race.name,
-          status: "imported",
+          status: eventComplete ? "imported" : "imported-partial",
           resultsImported,
           bonusCount: bonuses.length,
           unmatchedCount: unmatchedRiders.length,
@@ -560,4 +576,18 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// POST /api/cron/auto-import — manual on-demand refresh (e.g. to pull moto
+// results live as they post during an event). Any logged-in user can trigger
+// it; the import itself is idempotent. Delegates to the same GET logic.
+export async function POST(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Login required" }, { status: 401 });
+  }
+  const headers = new Headers();
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret) headers.set("authorization", `Bearer ${cronSecret}`);
+  return GET(new NextRequest(req.url, { headers }));
 }

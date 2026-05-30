@@ -76,11 +76,33 @@ export default function LeagueDashboard() {
   const [renewLineup250, setRenewLineup250] = useState(2);
   const [renewing, setRenewing] = useState(false);
   const [renewError, setRenewError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState("");
 
   useEffect(() => {
     fetch(`/api/leagues/${id}`).then((r) => r.json()).then((d) => { if (!d.error) setLeague(d); });
     fetch(`/api/leagues/${id}/leaderboard`).then((r) => r.json()).then((d) => { if (Array.isArray(d)) setStandings(d); });
   }, [id]);
+
+  // Manually pull latest race results (e.g. live, as motos finish), then
+  // reload standings so the new scoring shows immediately.
+  async function refreshResults() {
+    setRefreshing(true);
+    setRefreshMsg("");
+    try {
+      const res = await fetch(`/api/cron/auto-import`, { method: "POST" });
+      const data = await res.json();
+      const imported = Array.isArray(data.results)
+        ? data.results.reduce((n: number, r: { resultsImported?: number }) => n + (r.resultsImported || 0), 0)
+        : 0;
+      setRefreshMsg(res.ok ? (imported > 0 ? `Updated — ${imported} results pulled` : "No new results yet") : (data.error || "Refresh failed"));
+      const lb = await fetch(`/api/leagues/${id}/leaderboard`).then((r) => r.json());
+      if (Array.isArray(lb)) setStandings(lb);
+    } catch {
+      setRefreshMsg("Refresh failed");
+    }
+    setRefreshing(false);
+  }
 
   useEffect(() => {
     if (!league) return;
@@ -460,7 +482,20 @@ export default function LeagueDashboard() {
       {/* Leaderboard — only after draft */}
       {league.draft_status === "completed" && (
         <div className="bg-[#F5F0EB] border border-[#D4D0CB] rounded-xl p-6 mb-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-[#1A1A1A] mb-4">Standings</h2>
+          <div className="flex items-center justify-between mb-4 gap-3">
+            <h2 className="text-lg font-semibold text-[#1A1A1A]">Standings</h2>
+            <div className="flex items-center gap-2">
+              {refreshMsg && <span className="text-[#8A8A8A] text-xs">{refreshMsg}</span>}
+              <button
+                onClick={refreshResults}
+                disabled={refreshing}
+                className="text-xs font-semibold bg-[#1A1A1A] text-white px-3 py-1.5 rounded-lg hover:bg-[#333] disabled:opacity-50"
+                title="Pull the latest race results now (e.g. live as motos finish)"
+              >
+                {refreshing ? "Refreshing…" : "Refresh results"}
+              </button>
+            </div>
+          </div>
           <table className="w-full">
             <thead>
               <tr className="border-b border-[#D4D0CB]">
