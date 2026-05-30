@@ -24,10 +24,11 @@ function getResultsBaseUrl(series: string): string {
 function classifyRace(name: string, series?: string): ParsedRace["type"] {
   const n = name.toLowerCase();
   if (series === "mx") {
-    if (n.includes("450") && /moto\s*1\b/i.test(n)) return "moto1_450";
-    if (n.includes("450") && /moto\s*2\b/i.test(n)) return "moto2_450";
-    if (n.includes("250") && /moto\s*1\b/i.test(n)) return "moto1_250";
-    if (n.includes("250") && /moto\s*2\b/i.test(n)) return "moto2_250";
+    // promotocross names motos "450 Class Moto #1" — allow the optional "#".
+    if (n.includes("450") && /moto\s*#?\s*1\b/i.test(n)) return "moto1_450";
+    if (n.includes("450") && /moto\s*#?\s*2\b/i.test(n)) return "moto2_450";
+    if (n.includes("250") && /moto\s*#?\s*1\b/i.test(n)) return "moto1_250";
+    if (n.includes("250") && /moto\s*#?\s*2\b/i.test(n)) return "moto2_250";
     if (n.includes("450") && n.includes("overall")) return "main_450";
     if (n.includes("250") && n.includes("overall")) return "main_250";
     return "other";
@@ -56,6 +57,22 @@ function parseDriverNames(html: string): string[] {
     names.push(match[1]);
   }
   return names;
+}
+
+// Does a results-page title (e.g. "Fox Raceway - Pala, CA") refer to the same
+// event as our race name (e.g. "Fox Raceway National")? Exact substrings rarely
+// line up across SX/MX naming, so match on a shared significant word (venue or
+// city), ignoring filler like "National"/"Motocross"/"Raceway".
+function cityMatchesRace(eventCity: string | null | undefined, raceName: string): boolean {
+  if (!eventCity) return false;
+  const STOP = new Set(["national", "motocross", "classic", "the", "round", "raceway", "park", "mx", "sx", "supercross", "championship", "gp", "mxgp", "city"]);
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  const ev = norm(eventCity);
+  const rc = norm(raceName);
+  if (!ev || !rc) return false;
+  if (ev.includes(rc) || rc.includes(ev)) return true;
+  const evTokens = new Set(ev.split(" ").filter((w) => w.length > 2 && !STOP.has(w)));
+  return rc.split(" ").some((w) => w.length > 2 && !STOP.has(w) && evTokens.has(w));
 }
 
 async function fetchEventPageCity(eventId: string, baseUrl: string): Promise<string | null> {
@@ -191,12 +208,7 @@ async function discoverEventId(raceName: string, baseUrl: string): Promise<strin
     if (!eventIdMatch) return null;
     const eventId = eventIdMatch[1];
 
-    const raceCity = raceName.toLowerCase().trim();
-    if (
-      currentCity.includes(raceCity) ||
-      raceCity.includes(currentCity) ||
-      currentCity.replace(/\s+city/i, "") === raceCity.replace(/\s+city/i, "")
-    ) {
+    if (cityMatchesRace(currentCity, raceName)) {
       return eventId;
     }
 
@@ -240,13 +252,7 @@ export async function GET(req: NextRequest) {
       const baseUrl = getResultsBaseUrl(race.series || "sx");
       if (race.event_id) {
         const eventCity = await fetchEventPageCity(race.event_id, baseUrl);
-        const raceCity = race.name.toLowerCase();
-        const eventCityLower = eventCity?.toLowerCase() || "";
-        const cityMatches =
-          eventCityLower.includes(raceCity) ||
-          raceCity.includes(eventCityLower) ||
-          eventCityLower.replace(/\s+city/i, "") === raceCity.replace(/\s+city/i, "");
-        if (!cityMatches) {
+        if (!cityMatchesRace(eventCity, race.name)) {
           race.event_id = null;
         }
       }
