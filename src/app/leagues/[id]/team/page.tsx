@@ -918,9 +918,9 @@ export default function TeamPage() {
                   className="bg-[#EBE7E2] border border-[#D4D0CB] rounded-lg px-3 py-2 text-[#1A1A1A] text-sm"
                 >
                   <option value="all">All Classes</option>
-                  <option value="450">450</option>
-                  <option value="250E">250 East</option>
-                  <option value="250W">250 West</option>
+                  {classGroups.map(({ key, label }) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
                 </select>
               </div>
 
@@ -1004,13 +1004,12 @@ export default function TeamPage() {
                         <>
                           <p className="text-[#8A8A8A] text-sm mb-3">Your roster is full. Select a rider to drop:</p>
                           <div className="space-y-4">
-                            {(["450", "250E", "250W"] as const).map((cls) => {
-                              const clsLabel = cls === "450" ? "450 Class" : cls === "250E" ? "250 East" : "250 West";
-                              const riders = faData.myRoster.filter((r) => r.class === cls);
+                            {classGroups.map(({ key, label }) => {
+                              const riders = faData.myRoster.filter((r) => r.class === key);
                               if (riders.length === 0) return null;
                               return (
-                                <div key={cls}>
-                                  <h4 className="text-xs font-bold text-[#8A8A8A] uppercase tracking-widest mb-1.5">{clsLabel}</h4>
+                                <div key={key}>
+                                  <h4 className="text-xs font-bold text-[#8A8A8A] uppercase tracking-widest mb-1.5">{label}</h4>
                                   <div className="space-y-1.5">
                                     {riders.map((rider) => {
                                       const isSelected = selectedDrop?.id === rider.id;
