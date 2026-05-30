@@ -13,7 +13,7 @@ Draft is complete, rosters saved, lineups locking at gate drop. The app is fully
 - Stored `race_results.position` = rider's running **average finish** across their motos (drives the avg-finish stat).
 - **Incremental import:** the cron scores whatever motos are posted and recomputes each run (idempotent). MX races stay `status='upcoming'` (so scoring keeps refreshing) until the **overall** posts, then flip to `completed`.
 - **Live refresh:** `POST /api/cron/auto-import` (session-authed, delegates to the nightly GET) + a **"Refresh results"** button on the league Standings card — pull results live as motos finish. Note the nightly cron only runs once at 06:00 UTC, so use the button (or a future frequent cron) to watch live. Import only acts once `race_time` (gate drop) has passed.
-- Parsing risk: moto classification (`classifyRace`) depends on promotocross race names ("450 Class Moto 1" etc.) — unverified against live data; watch the first import.
+- **Import verified live (Round 1, 2026-05-30):** 250 Moto 1 scored correctly. Two bugs fixed along the way: event-id city matching (exact substrings → shared-word `cityMatchesRace`, fixes verify + auto-discover) and moto parsing (`classifyRace` now allows "Moto **#**1"). Fox Raceway `event_id=506003` set. Promotocross moto links are named "250 Class Moto #1".
 
 ## Open items
 
