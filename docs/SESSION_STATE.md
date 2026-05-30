@@ -6,6 +6,15 @@
 
 Draft is complete, rosters saved, lineups locking at gate drop. The app is fully MX-aware end to end (draft, lineup, schedule, settings, stats, status). Everything below is live in production (`fantasy-supercross.vercel.app`, auto-deploys from `main`).
 
+## MX scoring model (changed 2026-05-30)
+
+- **Each moto scored individually and summed per rider** (not the combined overall). A 1-1 = 20 pts/class. Points table (per moto): `1→10, 2→8, 3→7, 4→6, 5→5, 6-7→4, 8-10→3, 11-14→2, 15-20→1, 21+→0` (`getMxMotoPoints`). **SX is unchanged** (`getPointsForPosition`, pays 21-22 = 1).
+- **No moto-winner bonus.** **Holeshot = +1 per moto** (so up to 2/class/event).
+- Stored `race_results.position` = rider's running **average finish** across their motos (drives the avg-finish stat).
+- **Incremental import:** the cron scores whatever motos are posted and recomputes each run (idempotent). MX races stay `status='upcoming'` (so scoring keeps refreshing) until the **overall** posts, then flip to `completed`.
+- **Live refresh:** `POST /api/cron/auto-import` (session-authed, delegates to the nightly GET) + a **"Refresh results"** button on the league Standings card — pull results live as motos finish. Note the nightly cron only runs once at 06:00 UTC, so use the button (or a future frequent cron) to watch live. Import only acts once `race_time` (gate drop) has passed.
+- Parsing risk: moto classification (`classifyRace`) depends on promotocross race names ("450 Class Moto 1" etc.) — unverified against live data; watch the first import.
+
 ## Open items
 
 1. **tsfranklin (user 6) lineup for Round 1** — as of last check user 4 had set 16, user 6 had **0**. He must set 8×450 + 8×250 before gate drop (Fox Raceway locks **2026-05-30 20:00 UTC = 1 PM PT**).
