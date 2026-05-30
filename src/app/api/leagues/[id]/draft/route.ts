@@ -293,13 +293,33 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
 
   const draftedIds = (draftedPicks || []).map((p) => p.rider_id);
 
-  let riderQuery = supabase.from("riders").select("id").order("id").limit(1);
-  if (draftedIds.length > 0) {
-    riderQuery = riderQuery.not("id", "in", `(${draftedIds.join(",")})`);
+  // Find the top available rider. For non-SX leagues, pick from that series'
+  // rider pool (rider_series) so auto-pick can't hand out a rider with no
+  // class in this series; SX uses the global riders table.
+  const series = (league as Record<string, unknown>).series as string || "sx";
+  let topRiderId: number | null = null;
+  if (series === "sx") {
+    let riderQuery = supabase.from("riders").select("id").order("id").limit(1);
+    if (draftedIds.length > 0) {
+      riderQuery = riderQuery.not("id", "in", `(${draftedIds.join(",")})`);
+    }
+    const { data: topRider } = await riderQuery.maybeSingle();
+    topRiderId = topRider?.id ?? null;
+  } else {
+    let riderQuery = supabase
+      .from("rider_series")
+      .select("rider_id")
+      .eq("series", series)
+      .order("rider_id")
+      .limit(1);
+    if (draftedIds.length > 0) {
+      riderQuery = riderQuery.not("rider_id", "in", `(${draftedIds.join(",")})`);
+    }
+    const { data: topRider } = await riderQuery.maybeSingle();
+    topRiderId = topRider?.rider_id ?? null;
   }
-  const { data: topRider } = await riderQuery.maybeSingle();
 
-  if (!topRider) {
+  if (!topRiderId) {
     return NextResponse.json({ error: "No riders available" }, { status: 400 });
   }
 
@@ -308,11 +328,11 @@ export async function PATCH(_req: NextRequest, { params }: { params: Promise<{ i
   // Make the auto-pick
   await supabase.from("draft_picks").insert({
     league_id: Number(id), pick_number: info.pickNumber, round: info.round,
-    user_id: currentUserId, rider_id: topRider.id,
+    user_id: currentUserId, rider_id: topRiderId,
   });
 
   await supabase.from("league_rosters").upsert(
-    { league_id: Number(id), user_id: currentUserId, rider_id: topRider.id },
+    { league_id: Number(id), user_id: currentUserId, rider_id: topRiderId },
     { onConflict: "league_id,user_id,rider_id", ignoreDuplicates: true }
   );
 

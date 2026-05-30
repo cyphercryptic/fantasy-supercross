@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import TeamLogo from "@/components/TeamLogo";
-import MotoBike, { parseBikeConfig } from "@/components/MotoBike";
+import MotoBike, { parseBikeConfig, BIKE_BRANDS } from "@/components/MotoBike";
 
 interface Rider {
   id: number;
@@ -62,11 +62,22 @@ export default function DraftPage() {
   const [message, setMessage] = useState("");
   const [picking, setPicking] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [authRequired, setAuthRequired] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoPickTriggered = useRef(false);
 
   const loadDraft = useCallback(() => {
-    fetch(`/api/leagues/${id}/draft`).then((r) => r.json()).then(setDraft);
+    fetch(`/api/leagues/${id}/draft`)
+      .then(async (r) => {
+        const j = await r.json();
+        // 401 = not logged in (or session expired): surface it instead of
+        // hanging on "Loading...". Otherwise only adopt successful responses
+        // so a transient error body (which lacks `members`) can't crash the
+        // render — keep the last good state through any blip.
+        if (r.status === 401) { setAuthRequired(true); return; }
+        if (r.ok) { setAuthRequired(false); setDraft(j); }
+      })
+      .catch(() => {});
   }, [id]);
 
   useEffect(() => {
@@ -82,12 +93,14 @@ export default function DraftPage() {
     fetch(`/api/riders?series=${series}`).then((r) => r.json()).then(setAllRiders);
   }, [draft]);
 
-  // Poll for updates every 3 seconds
+  // Poll for updates every 3 seconds. Also keep polling while draft is still
+  // null (e.g. the initial load failed) so the page self-recovers once auth
+  // or connectivity comes back, rather than hanging on "Loading..." forever.
   useEffect(() => {
-    if (!draft || draft.draft_status !== "drafting") return;
+    if (draft && draft.draft_status !== "drafting") return;
     const interval = setInterval(loadDraft, 3000);
     return () => clearInterval(interval);
-  }, [draft?.draft_status, loadDraft]);
+  }, [draft?.draft_status, draft, loadDraft]);
 
   // Countdown timer — use server time to avoid clock drift
   const pickStartedAt = draft?.pick_started_at ?? null;
@@ -101,8 +114,11 @@ export default function DraftPage() {
       setTimeLeft(null);
       return;
     }
-    const raw = pickStartedAt.endsWith("Z") ? pickStartedAt : pickStartedAt + "Z";
-    const started = new Date(raw).getTime();
+    // Treat as UTC only if the timestamp has no timezone designator. Supabase
+    // returns timestamptz with a "+00:00" offset (not "Z"), so blindly
+    // appending "Z" produced "...+00:00Z" -> Invalid Date -> NaN -> dead timer.
+    const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(pickStartedAt);
+    const started = new Date(hasTz ? pickStartedAt : pickStartedAt + "Z").getTime();
     const serverNow = new Date(serverTime).getTime();
     const elapsedAtFetch = Math.floor((serverNow - started) / 1000);
     const fetchedAt = Date.now();
@@ -157,6 +173,16 @@ export default function DraftPage() {
     loadDraft();
   }
 
+  if (authRequired) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-8 text-center">
+        <h1 className="text-3xl font-bold text-[#1A1A1A] mb-4">Please log in</h1>
+        <p className="text-[#8A8A8A] mb-6">Your session has expired or you&apos;re signed out. Log in to view the draft.</p>
+        <a href="/login" className="inline-block px-6 py-3 bg-[#1A1A1A] text-white rounded-lg font-semibold">Go to login</a>
+      </div>
+    );
+  }
+
   if (!draft) return <div className="max-w-6xl mx-auto px-4 py-8 text-[#8A8A8A]">Loading...</div>;
 
   if (draft.draft_status === "waiting") {
@@ -168,6 +194,12 @@ export default function DraftPage() {
     );
   }
 
+  // A live draft response should always carry members + order; if not, treat
+  // it as still loading rather than crashing on the render below.
+  if (!draft.members || !draft.draft_order) {
+    return <div className="max-w-6xl mx-auto px-4 py-8 text-[#8A8A8A]">Loading...</div>;
+  }
+
   const draftedSet = new Set(draft.drafted_rider_ids);
   const series = draft.series || "sx";
   const classOptions = series === "mx"
@@ -175,6 +207,13 @@ export default function DraftPage() {
     : [{ key: "450", label: "450 Class" }, { key: "250E", label: "250 East" }, { key: "250W", label: "250 West" }];
   const currentUser = draft.members.find((m) => m.id === draft.current_user_id);
   const memberMap = new Map(draft.members.map((m) => [m.id, m]));
+
+  // Each team's assigned color = their chosen bike brand color (falls back to
+  // a neutral gray for members who haven't picked a bike yet).
+  const colorFor = (m?: Member | null) => {
+    const cfg = m?.team_logo ? parseBikeConfig(m.team_logo) : null;
+    return cfg ? BIKE_BRANDS[cfg.brand]?.color || "#6B7280" : "#6B7280";
+  };
 
   // Compute upcoming pick order (snake draft: 1,2,3,4,4,3,2,1,1,2,3,4...)
   const upcomingOrder: number[] = [];
@@ -264,15 +303,20 @@ export default function DraftPage() {
               const member = memberMap.get(userId);
               const isOnClock = idx === 0;
               const isAutoUser = draft.auto_pick_users?.includes(userId);
+              const memberColor = colorFor(member);
               return (
                 <div
                   key={idx}
-                  className={`flex flex-col items-center justify-center px-3 sm:px-4 py-2 border-r border-[#D4D0CB] last:border-r-0 min-w-[70px] sm:min-w-[90px] shrink-0 ${
+                  className={`flex flex-col items-center justify-center px-3 sm:px-4 py-2 border-r border-[#D4D0CB] last:border-r-0 min-w-[70px] sm:min-w-[90px] shrink-0 border-t-4 ${
                     isOnClock ? "bg-[#1A1A1A]" : ""
                   }`}
+                  style={{
+                    borderTopColor: memberColor,
+                    ...(isOnClock ? {} : { backgroundColor: `${memberColor}14` }),
+                  }}
                 >
                   {isOnClock && (
-                    <p className="text-[9px] sm:text-[10px] uppercase font-bold text-green-400 tracking-wider mb-1">On the Clock</p>
+                    <p className="text-[9px] sm:text-[10px] uppercase font-bold tracking-wider mb-1" style={{ color: memberColor }}>On the Clock</p>
                   )}
                   {!isOnClock && idx === 1 && (
                     <p className="text-[9px] sm:text-[10px] uppercase font-semibold text-[#A0A0A0] tracking-wider mb-1">Up Next</p>
@@ -280,9 +324,12 @@ export default function DraftPage() {
                   {!isOnClock && idx > 1 && (
                     <p className="text-[9px] sm:text-[10px] uppercase font-semibold text-[#A0A0A0] tracking-wider mb-1">&nbsp;</p>
                   )}
-                  <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full overflow-hidden flex items-center justify-center shrink-0 ${
-                    isOnClock ? "ring-2 ring-green-400 bg-[#333]" : isAutoUser ? "bg-[#D4D0CB] ring-1 ring-orange-300" : "bg-[#D4D0CB]"
-                  }`}>
+                  <div
+                    className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full overflow-hidden flex items-center justify-center shrink-0 ${
+                      isOnClock ? "bg-[#333]" : "bg-[#D4D0CB]"
+                    }`}
+                    style={{ boxShadow: `0 0 0 2px ${memberColor}` }}
+                  >
                     {parseBikeConfig(member?.team_logo ?? null) ? (
                       <MotoBike brand={parseBikeConfig(member!.team_logo)!.brand} number={parseBikeConfig(member!.team_logo)!.number} size="sm" />
                     ) : (
@@ -390,8 +437,13 @@ export default function DraftPage() {
             <div className="space-y-1 max-h-60 overflow-y-auto">
               {[...draft.picks].reverse().slice(0, 15).map((pick) => {
                 const picker = memberMap.get(pick.user_id);
+                const pickerColor = colorFor(picker);
                 return (
-                  <div key={pick.pick_number} className="flex items-center gap-2 px-2 py-1.5 text-sm">
+                  <div
+                    key={pick.pick_number}
+                    className="flex items-center gap-2 px-2 py-1.5 text-sm rounded border-l-4"
+                    style={{ borderLeftColor: pickerColor, backgroundColor: `${pickerColor}14` }}
+                  >
                     <span className="text-[#A0A0A0] w-6 text-right shrink-0">#{pick.pick_number}</span>
                     <div className="w-5 h-5 rounded-full bg-[#D4D0CB] overflow-hidden flex items-center justify-center shrink-0">
                       {parseBikeConfig(picker?.team_logo ?? null) ? (

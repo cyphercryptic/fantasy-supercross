@@ -160,6 +160,9 @@ export default function LeagueDashboard() {
 
   function LeagueSettingsCard({ league, onSaved }: { league: League; onSaved: () => void }) {
     const editable = league.is_commissioner && league.draft_status === "waiting";
+    // MX (and other non-SX series) use a single 250 class; lineup_250e holds it
+    // and lineup_250w is unused. SX splits 250 into East/West.
+    const isMx = (league.series ?? "sx") !== "sx";
     const [editing, setEditing] = useState(false);
     const [maxMembers, setMaxMembers] = useState(league.max_members);
     const [rosterSize, setRosterSize] = useState(league.roster_size);
@@ -204,12 +207,18 @@ export default function LeagueDashboard() {
               </button>
             )}
           </div>
-          <div className="grid grid-cols-5 gap-4 text-center">
+          <div className={isMx ? "grid grid-cols-4 gap-4 text-center" : "grid grid-cols-5 gap-4 text-center"}>
             <div><p className="text-[#1A1A1A] font-bold text-lg">{league.max_members}</p><p className="text-[#A0A0A0] text-xs">Members</p></div>
             <div><p className="text-[#1A1A1A] font-bold text-lg">{league.roster_size}</p><p className="text-[#A0A0A0] text-xs">Roster Size</p></div>
             <div><p className="text-[#1A1A1A] font-bold text-lg">{league.lineup_450}</p><p className="text-[#A0A0A0] text-xs">450 Slots</p></div>
-            <div><p className="text-[#1A1A1A] font-bold text-lg">{league.lineup_250e}</p><p className="text-[#A0A0A0] text-xs">250E Slots</p></div>
-            <div><p className="text-[#1A1A1A] font-bold text-lg">{league.lineup_250w}</p><p className="text-[#A0A0A0] text-xs">250W Slots</p></div>
+            {isMx ? (
+              <div><p className="text-[#1A1A1A] font-bold text-lg">{league.lineup_250e}</p><p className="text-[#A0A0A0] text-xs">250 Slots</p></div>
+            ) : (
+              <>
+                <div><p className="text-[#1A1A1A] font-bold text-lg">{league.lineup_250e}</p><p className="text-[#A0A0A0] text-xs">250E Slots</p></div>
+                <div><p className="text-[#1A1A1A] font-bold text-lg">{league.lineup_250w}</p><p className="text-[#A0A0A0] text-xs">250W Slots</p></div>
+              </>
+            )}
           </div>
           {league.is_commissioner && league.draft_status !== "waiting" && (
             <p className="text-[#A0A0A0] text-[10px] mt-2 italic">Settings are locked once the draft starts.</p>
@@ -222,7 +231,7 @@ export default function LeagueDashboard() {
       <div className="bg-[#F5F0EB] border-2 border-[#1A1A1A] rounded-xl p-4 mb-6 shadow-sm">
         <h3 className="text-[#1A1A1A] text-sm font-bold mb-3">Edit League Settings</h3>
         {err && <p className="text-red-700 text-xs mb-3 bg-red-50 border border-red-200 rounded p-2">{err}</p>}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-3">
+        <div className={isMx ? "grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3" : "grid grid-cols-2 sm:grid-cols-5 gap-3 mb-3"}>
           <label className="block text-xs">
             <span className="text-[#8A8A8A] block mb-1">Members</span>
             <input type="number" min={2} max={20} value={maxMembers} onChange={(e) => setMaxMembers(parseInt(e.target.value) || 2)} className="w-full bg-white border border-[#D4D0CB] rounded px-2 py-1.5 text-[#1A1A1A] font-bold text-center" />
@@ -235,14 +244,23 @@ export default function LeagueDashboard() {
             <span className="text-[#8A8A8A] block mb-1">450 slots</span>
             <input type="number" min={1} max={22} value={lineup450} onChange={(e) => setLineup450(parseInt(e.target.value) || 1)} className="w-full bg-white border border-[#D4D0CB] rounded px-2 py-1.5 text-[#1A1A1A] font-bold text-center" />
           </label>
-          <label className="block text-xs">
-            <span className="text-[#8A8A8A] block mb-1">250E slots</span>
-            <input type="number" min={0} max={22} value={lineup250e} onChange={(e) => setLineup250e(parseInt(e.target.value) || 0)} className="w-full bg-white border border-[#D4D0CB] rounded px-2 py-1.5 text-[#1A1A1A] font-bold text-center" />
-          </label>
-          <label className="block text-xs">
-            <span className="text-[#8A8A8A] block mb-1">250W slots</span>
-            <input type="number" min={0} max={22} value={lineup250w} onChange={(e) => setLineup250w(parseInt(e.target.value) || 0)} className="w-full bg-white border border-[#D4D0CB] rounded px-2 py-1.5 text-[#1A1A1A] font-bold text-center" />
-          </label>
+          {isMx ? (
+            <label className="block text-xs">
+              <span className="text-[#8A8A8A] block mb-1">250 slots</span>
+              <input type="number" min={0} max={22} value={lineup250e} onChange={(e) => setLineup250e(parseInt(e.target.value) || 0)} className="w-full bg-white border border-[#D4D0CB] rounded px-2 py-1.5 text-[#1A1A1A] font-bold text-center" />
+            </label>
+          ) : (
+            <>
+              <label className="block text-xs">
+                <span className="text-[#8A8A8A] block mb-1">250E slots</span>
+                <input type="number" min={0} max={22} value={lineup250e} onChange={(e) => setLineup250e(parseInt(e.target.value) || 0)} className="w-full bg-white border border-[#D4D0CB] rounded px-2 py-1.5 text-[#1A1A1A] font-bold text-center" />
+              </label>
+              <label className="block text-xs">
+                <span className="text-[#8A8A8A] block mb-1">250W slots</span>
+                <input type="number" min={0} max={22} value={lineup250w} onChange={(e) => setLineup250w(parseInt(e.target.value) || 0)} className="w-full bg-white border border-[#D4D0CB] rounded px-2 py-1.5 text-[#1A1A1A] font-bold text-center" />
+              </label>
+            </>
+          )}
         </div>
         <div className="flex gap-2">
           <button onClick={save} disabled={saving} className="bg-[#1A1A1A] hover:bg-[#333] text-white px-4 py-2 rounded text-sm font-semibold disabled:opacity-50">

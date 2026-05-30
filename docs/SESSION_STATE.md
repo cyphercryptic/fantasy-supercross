@@ -1,10 +1,22 @@
 # Session State — pick up here next time
 
-**Last updated:** 2026-05-28
+**Last updated:** 2026-05-29
 
-## Status: Ready to draft
+## Status: Ready to draft (full rider pool loaded)
 
 All infrastructure for the MX 2026 season is in place. The league has been renewed. Draft can start any time before Round 1 (May 30, Fox Raceway).
+
+**2026-05-29:** Rider pool expanded to the **complete Fox Raceway Round 1 entry list** — 146 riders total (71×450MX, 75×250MX), all `active`. Added 78 riders (41×450MX, 37×250MX) from the official racerxonline.com 450/250 entry lists. All existing SX-era riders kept; marquee names not on the Round 1 entry list (Tomac, Roczen, Prado, Plessinger, Hampshire, M.Stewart, Savatgy, McElrath; Beaumer, Swoll, Bennick, Adams) left `active` by decision — they may race later rounds. Applied via service-role script; recorded in `migrations/2026-05-29_mx_full_entry_list.sql`.
+
+**2026-05-29 (mock-draft test + bug fixes):** Ran a full 44-pick mock draft through the real API and fixed several issues found:
+- **`league_rosters` never populated** — the draft upsert used `ON CONFLICT (league_id,user_id,rider_id)` but no matching unique constraint existed, so every upsert silently failed → empty rosters after a draft. Added the constraint (`migrations/2026-05-29b_league_rosters_unique.sql`). **Connor ran this in the Supabase SQL editor.**
+- **Auto-pick pool leak** — the timeout auto-pick (`draft/route.ts` PATCH) picked the lowest global rider id with no series filter; for MX it could assign an SX-only rider with no MX class. Now picks from the `rider_series` pool for the league's series. *(code change, uncommitted)*
+- **Draft timer dead** — timer parsing did `pickStartedAt + "Z"` but Supabase returns `+00:00` offsets → `Invalid Date` → NaN. Now detects existing tz info. *(code change)*
+- **Draft page crash/hang resilience** — `loadDraft` now ignores non-200 responses (kept crashing render on transient error bodies lacking `members`); 401 shows a "Please log in" screen; polls while `draft` is null so it self-recovers. *(code change)*
+- **Recent Picks + Coming Up ticker** now highlighted in each team's assigned color (`BIKE_BRANDS[brand].color` from `team_logo`). *(code change)*
+- **Rider bikes backfilled** — 93 MX riders had null `team` (no bike icon on the draft board); filled from entry-list bikes (`migrations/2026-05-29c_mx_rider_bikes.sql`, applied via script).
+- Same `+ "Z"` timestamp bug still latent (display-only) in `team/page.tsx:1096` and `free-agents/page.tsx:459` — NOT yet fixed.
+- Code changes are live in the running dev server but **uncommitted** as of handoff.
 
 ## All migrations run ✅
 
@@ -17,6 +29,9 @@ All infrastructure for the MX 2026 season is in place. The league has been renew
 | `2026-05-22_mx_rider_series.sql` | ✅ (52 factory riders seeded) |
 | `2026-05-28_league_archived.sql` | ✅ |
 | `2026-05-28_mx_rider_additions.sql` | ✅ (16 more riders added, Jett Lawrence # fixed) |
+| `2026-05-29_mx_full_entry_list.sql` | ✅ (78 riders added → 146 total, full Round 1 entry list) |
+| `2026-05-29b_league_rosters_unique.sql` | ✅ (unique constraint so draft populates rosters) |
+| `2026-05-29c_mx_rider_bikes.sql` | ✅ (backfilled bikes for 93 null-team MX riders, applied via script) |
 
 ## What was built this session
 
@@ -29,7 +44,7 @@ All infrastructure for the MX 2026 season is in place. The league has been renew
 
 ## Immediate next steps (in order)
 
-1. **Add more riders** — Many competitive riders from the full entry list still need to be added. Do this before drafting, ideally by checking entry list round-by-round as riders confirm. Focus on anyone who could realistically finish top 20-25.
+1. ✅ **Rider pool complete** — Full Round 1 entry list loaded (146 riders). For later rounds, re-check entry lists as the series moves venues and add any new confirmed entries.
 2. **Draft** — Both members draft in the MX league before Round 1 (May 30, Fox Raceway). `draft_status='waiting'`, roster_size=22, 8×450MX + 8×250MX starters.
 3. **Verify auto-import cron URL** — After Round 1 results post, check if `results.promotocross.com` is the correct base URL. If results don't auto-import, check the domain. May need a small URL fix.
 4. **Injury cron for MX** — The existing injury cron (`/api/cron/injury-report`) is SX-specific (scrapes supercrosslive.com entry lists). It will do nothing useful for MX. MX injury status management is manual for now (set status via admin or wait for post-race cron to mark riders out).
