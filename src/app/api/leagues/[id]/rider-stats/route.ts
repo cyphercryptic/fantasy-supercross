@@ -23,16 +23,27 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
-  // Fetch in parallel: race metadata, all race results, all bonuses
+  // Scope stats to this league's series so an MX team doesn't show SX-season
+  // points (and vice versa).
+  const { data: league } = await supabase
+    .from("leagues")
+    .select("series")
+    .eq("id", id)
+    .single();
+  const series = (league?.series as string) || "sx";
+
+  // Fetch in parallel: race metadata (this series only), results, bonuses
   const [racesRes, resultsRes, bonusesRes] = await Promise.all([
-    supabase.from("races").select("id, round_number, name"),
+    supabase.from("races").select("id, round_number, name").eq("series", series),
     supabase.from("race_results").select("rider_id, race_id, position, points"),
-    supabase.from("race_bonuses").select("rider_id, points"),
+    supabase.from("race_bonuses").select("rider_id, race_id, points"),
   ]);
 
   const races = racesRes.data || [];
-  const allResults = resultsRes.data || [];
-  const allBonuses = bonusesRes.data || [];
+  // Only count results/bonuses from races in this series.
+  const seriesRaceIds = new Set(races.map((r) => r.id));
+  const allResults = (resultsRes.data || []).filter((r) => seriesRaceIds.has(r.race_id));
+  const allBonuses = (bonusesRes.data || []).filter((b) => seriesRaceIds.has(b.race_id));
 
   // Build race lookup map
   const raceMap = new Map<number, { round_number: number; name: string }>();
