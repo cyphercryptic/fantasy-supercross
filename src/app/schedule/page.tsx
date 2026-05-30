@@ -12,7 +12,15 @@ interface Race {
   location: string | null;
   status: string;
   race_time: string | null;
+  series: string;
 }
+
+const SERIES_META: Record<string, { label: string; title: string; sub: string }> = {
+  sx: { label: "Supercross", title: "2026 Supercross Schedule", sub: "Monster Energy AMA Supercross Championship" },
+  mx: { label: "Pro Motocross", title: "2026 Pro Motocross Schedule", sub: "AMA Pro Motocross Championship" },
+  smx: { label: "SMX", title: "2026 SuperMotocross Schedule", sub: "SuperMotocross World Championship" },
+};
+const SERIES_ORDER = ["sx", "mx", "smx"];
 
 function formatDate(dateStr: string) {
   const d = new Date(dateStr + "T00:00:00");
@@ -65,17 +73,18 @@ interface RaceResult {
 }
 
 export default function SchedulePage() {
-  const [races, setRaces] = useState<Race[]>([]);
+  const [allRaces, setAllRaces] = useState<Race[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRace, setSelectedRace] = useState<Race | null>(null);
   const [results, setResults] = useState<RaceResult[]>([]);
   const [loadingResults, setLoadingResults] = useState(false);
+  const [series, setSeries] = useState<string>("");
 
   useEffect(() => {
     fetch("/api/races")
       .then((r) => r.json())
-      .then((data) => {
-        setRaces(data);
+      .then((data: Race[]) => {
+        setAllRaces(data);
         setLoading(false);
       });
   }, []);
@@ -90,6 +99,25 @@ export default function SchedulePage() {
   }
 
   const today = new Date().toISOString().split("T")[0];
+
+  // Which series tabs to show, in canonical order
+  const availableSeries = [...new Set(allRaces.map((r) => r.series || "sx"))].sort(
+    (a, b) => SERIES_ORDER.indexOf(a) - SERIES_ORDER.indexOf(b)
+  );
+
+  // Default to the series that owns the soonest upcoming race (so MX shows
+  // during MX season), falling back to the first available series.
+  const defaultSeries = (() => {
+    const upcoming = allRaces
+      .filter((r) => r.status === "upcoming" && r.date && r.date >= today)
+      .sort((a, b) => a.date!.localeCompare(b.date!));
+    return upcoming[0]?.series || availableSeries[0] || "sx";
+  })();
+  const activeSeries = series || defaultSeries;
+  const isSx = activeSeries === "sx";
+  const meta = SERIES_META[activeSeries] || SERIES_META.sx;
+
+  const races = allRaces.filter((r) => (r.series || "sx") === activeSeries);
   const nextRace = races.find(
     (r) => r.status === "upcoming" && r.date && r.date >= today
   );
@@ -105,11 +133,32 @@ export default function SchedulePage() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold text-[#1A1A1A] mb-2">
-        2026 Supercross Schedule
+        {meta.title}
       </h1>
-      <p className="text-[#8A8A8A] text-sm mb-8">
-        Monster Energy AMA Supercross Championship
+      <p className="text-[#8A8A8A] text-sm mb-4">
+        {meta.sub}
       </p>
+
+      {availableSeries.length > 1 && (
+        <div className="flex gap-2 mb-8">
+          {availableSeries.map((s) => {
+            const active = s === activeSeries;
+            return (
+              <button
+                key={s}
+                onClick={() => setSeries(s)}
+                className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${
+                  active
+                    ? "bg-[#1A1A1A] text-white"
+                    : "bg-[#EBE7E2] text-[#6B6B6B] hover:bg-[#E0DBD5]"
+                }`}
+              >
+                {SERIES_META[s]?.label || s.toUpperCase()}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {nextRace && (
         <div className="bg-[#1A1A1A] text-white rounded-xl p-6 mb-8 shadow-md">
@@ -140,14 +189,16 @@ export default function SchedulePage() {
                   {splitLocation(nextRace.location).city}
                 </p>
               )}
-              <div className="mt-2 flex items-center gap-2">
-                {get250Region(nextRace.round_number) && (
-                  <RegionBadge region={get250Region(nextRace.round_number)!} />
-                )}
-                {isTripleCrown(nextRace.round_number) && (
-                  <TripleCrownBadge />
-                )}
-              </div>
+              {isSx && (
+                <div className="mt-2 flex items-center gap-2">
+                  {get250Region(nextRace.round_number) && (
+                    <RegionBadge region={get250Region(nextRace.round_number)!} />
+                  )}
+                  {isTripleCrown(nextRace.round_number) && (
+                    <TripleCrownBadge />
+                  )}
+                </div>
+              )}
             </div>
             <div className="text-5xl font-black text-gray-700">
               R{nextRace.round_number}
@@ -205,10 +256,10 @@ export default function SchedulePage() {
                       Completed
                     </span>
                   )}
-                  {get250Region(race.round_number) && (
+                  {isSx && get250Region(race.round_number) && (
                     <RegionBadge region={get250Region(race.round_number)!} faded={isCompleted} />
                   )}
-                  {isTripleCrown(race.round_number) && (
+                  {isSx && isTripleCrown(race.round_number) && (
                     <TripleCrownBadge faded={isCompleted} />
                   )}
                 </div>
