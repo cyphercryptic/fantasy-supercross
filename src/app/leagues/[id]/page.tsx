@@ -64,6 +64,7 @@ export default function LeagueDashboard() {
   const [league, setLeague] = useState<League | null>(null);
   const [standings, setStandings] = useState<Standing[]>([]);
   const [upcomingRace, setUpcomingRace] = useState<Race | null>(null);
+  const [seasonOver, setSeasonOver] = useState(false);
   const [copied, setCopied] = useState(false);
   const [draftMessage, setDraftMessage] = useState("");
   const [expandedUser, setExpandedUser] = useState<number | null>(null);
@@ -110,6 +111,9 @@ export default function LeagueDashboard() {
     fetch(`/api/races?series=${series}`).then((r) => r.json()).then((races: Race[]) => {
       const upcoming = races.find((r) => r.status === "upcoming");
       setUpcomingRace(upcoming ?? null);
+      // Season is over only once there ARE races and every one is completed —
+      // used to gate the "Start New Season" button so it doesn't show mid-season.
+      setSeasonOver(races.length > 0 && races.every((r) => r.status === "completed"));
     });
   }, [league]);
 
@@ -609,8 +613,9 @@ export default function LeagueDashboard() {
         </div>
       </div>
 
-      {/* Renew Season — commissioner only, completed leagues only */}
-      {league.is_commissioner && league.draft_status === "completed" && !league.archived_at && (
+      {/* Renew Season — commissioner only, and only once the season is over
+          (all races completed) so it can't archive an active season. */}
+      {league.is_commissioner && league.draft_status === "completed" && !league.archived_at && seasonOver && (
         <div className="bg-[#F5F0EB] border border-[#D4D0CB] rounded-xl p-6 shadow-sm mt-4">
           <div className="flex items-center justify-between">
             <div>
