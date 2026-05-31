@@ -315,6 +315,12 @@ export async function GET(req: NextRequest) {
         const hasMainResults = eventRaces.some((r) => r.type === "main_450" || r.type === "main_250");
         const hasOverallResults = eventRaces.some((r) => r.isOverall);
         const hasMotoResults = eventRaces.some((r) => r.type.startsWith("moto"));
+        // MX event is only fully done once BOTH classes' second motos are in.
+        // (The 250 program — and its overall — finishes before 450 Moto 2, so
+        // we must not complete on the first overall or we'd strand 450 Moto 2.)
+        const has450Moto2 = eventRaces.some((r) => r.type === "moto2_450");
+        const has250Moto2 = eventRaces.some((r) => r.type === "moto2_250");
+        const mxEventDone = has450Moto2 && has250Moto2;
 
         // SX Triple Crown: multiple mains per class
         const mainCount450 = eventRaces.filter((r) => r.type === "main_450").length;
@@ -513,7 +519,7 @@ export async function GET(req: NextRequest) {
         // Mark race completed. For MX we keep it "upcoming" until the overall
         // posts (event over) so scoring keeps refreshing as motos come in;
         // SX completes as soon as results are imported.
-        const eventComplete = !isMX || hasOverallResults;
+        const eventComplete = !isMX || mxEventDone;
         if (eventComplete) {
           await supabase.from("races").update({ status: "completed" }).eq("id", race.id);
         }
