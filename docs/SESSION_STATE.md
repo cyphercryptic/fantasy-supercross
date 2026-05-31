@@ -17,10 +17,12 @@ Draft is complete, rosters saved, lineups locking at gate drop. The app is fully
 
 ## Open items
 
-1. **tsfranklin (user 6) lineup for Round 1** — as of last check user 4 had set 16, user 6 had **0**. He must set 8×450 + 8×250 before gate drop (Fox Raceway locks **2026-05-30 20:00 UTC = 1 PM PT**).
-2. **Verify the first MX results import** — the auto-import cron runs nightly at **06:00 UTC (~11 PM PT)**. Round 1 is the first-ever live MX import; the `results.promotocross.com` domain + URL structure were confirmed correct and **Fox Raceway = event_id 506003**. After the cron fires (Sun ~06:00 UTC), confirm Round 1 scored (race_results + race_bonuses populated, race status flipped to `completed`, leaderboard shows points). Fix parsing if needed. *(Optionally pre-set `event_id='506003'` on round 1 to skip auto-discovery — SQL was provided, confirm if run.)*
-3. **MX injury status is manual** — the injury cron (`/api/cron/injury-report`) is SX-only. Set `rider_series.status='out'` manually when MX riders get hurt. Note: `riders.status` holds stale SX injuries (24 riders incl. Jett Lawrence) — MX UI now reads `rider_series.status` everywhere, so ignore `riders.status` for MX.
-4. **Latent (display-only):** `team/page.tsx:1096` and `free-agents/page.tsx:459` still append `"Z"` to `created_at` for transaction dates — may show "Invalid Date". Not fixed.
+1. **Round 1 (Fox Raceway) is scored & complete.** Final: Elbows Out 129, KTM Dad 94. Imported live via the Refresh button. Round 2 = Hangtown (Jun 6) — watch that it auto-discovers (event name "Hangtown Motocross Classic" vs venue "Prairie City"; `cityMatchesRace` should handle it, but verify race day).
+2. **MX injury status is manual** — the injury cron (`/api/cron/injury-report`) is SX-only. Set `rider_series.status='out'` manually when MX riders get hurt. `riders.status` holds stale SX injuries (24 riders incl. Jett Lawrence) — MX UI reads `rider_series.status` everywhere, so ignore `riders.status` for MX.
+3. **Remaining low-priority SX-isms** (audited 2026-05-30, NOT fixed — non-user-facing): standalone `/lineup` and `/roster` pages still use SX class logic but **nothing links to them**; the **Admin → Riders** class dropdown is 450/250E/250W (only matters if manually adding MX riders there).
+
+### Fixed in the 2026-05-30 MX-awareness audit
+Standings breakdown, weekly recap, season recap all now override class from `rider_series` and scope races to the league's series (recap previously defaulted to the SX finale and mis-bucketed 450MX riders into 250 / mistook 4 moto holeshots for a Triple Crown). Transaction-date "Invalid Date" (`+ "Z"`) fixed on team + free-agents. Renew/"Start New Season" button now gated on `seasonOver` (all races completed), not just draft-complete.
 
 ## What was done 2026-05-30 (this session)
 
