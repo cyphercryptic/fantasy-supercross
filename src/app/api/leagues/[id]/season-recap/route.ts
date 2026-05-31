@@ -23,6 +23,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
+  const { data: leagueRow } = await supabase.from("leagues").select("series").eq("id", id).single();
+  const series = (leagueRow?.series as string) || "sx";
+
   // League members
   const { data: rawMembers } = await supabase
     .from("league_members")
@@ -32,11 +35,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   type MemberRow = { user_id: number; team_name: string | null; team_logo: string | null; app_users: { username: string } | null };
   const members = (rawMembers || []) as unknown as MemberRow[];
 
-  // All completed races
+  // All completed races in this league's series
   const { data: races } = await supabase
     .from("races")
     .select("id, name, round_number, date, status")
     .eq("status", "completed")
+    .eq("series", series)
     .order("round_number", { ascending: true });
 
   if (!races || races.length === 0) {
@@ -71,6 +75,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   type Rider = { id: number; name: string; number: number | null; team: string | null; class: string };
   const riderById = new Map<number, Rider>();
   for (const r of allRiders || []) riderById.set(r.id, r as Rider);
+
+  // For non-SX series, riders.class is the stale SX class — override with the
+  // per-series class so 450/250 buckets and labels are correct.
+  if (series !== "sx") {
+    const { data: rs } = await supabase.from("rider_series").select("rider_id, class").eq("series", series);
+    for (const x of rs || []) {
+      const r = riderById.get(x.rider_id);
+      if (r) r.class = x.class as string;
+    }
+  }
 
   // Roster (full season-ending roster per user)
   const { data: rosterEntries } = await supabase
@@ -275,8 +289,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const seasonRiderArr = [...riderSeason.values()].filter((r) => r.races_raced > 0);
   seasonRiderArr.sort((a, b) => b.total_points - a.total_points);
   const top10Overall = seasonRiderArr.slice(0, 10);
-  const top5_450 = seasonRiderArr.filter((r) => r.class === "450").slice(0, 5);
-  const top5_250 = seasonRiderArr.filter((r) => r.class !== "450").slice(0, 5);
+  const top5_450 = seasonRiderArr.filter((r) => (r.class || "").includes("450")).slice(0, 5);
+  const top5_250 = seasonRiderArr.filter((r) => !(r.class || "").includes("450")).slice(0, 5);
 
   // Most wins / podiums / holeshots
   const mostWins = [...seasonRiderArr].sort((a, b) => b.wins - a.wins).filter((r) => r.wins > 0).slice(0, 3);

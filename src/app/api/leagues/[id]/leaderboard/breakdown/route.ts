@@ -38,6 +38,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Target user is not a member of this league" }, { status: 404 });
   }
 
+  const { data: leagueRow } = await supabase.from("leagues").select("series").eq("id", id).single();
+  const series = (leagueRow?.series as string) || "sx";
+
   // Get all riders on the target user's roster
   const { data: rosterEntries } = await supabase
     .from("league_rosters")
@@ -56,11 +59,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     };
   });
 
-  // Get all completed races
+  // For non-SX series, riders.class is the stale SX class — use the per-series class.
+  if (series !== "sx" && rosterRiders.length > 0) {
+    const { data: rs } = await supabase
+      .from("rider_series")
+      .select("rider_id, class")
+      .eq("series", series)
+      .in("rider_id", rosterRiders.map((r) => r.rider_id));
+    const cmap = new Map((rs || []).map((x) => [x.rider_id, x.class as string]));
+    for (const r of rosterRiders) {
+      const c = cmap.get(r.rider_id);
+      if (c) r.class = c;
+    }
+  }
+
+  // Get completed races for this league's series only
   const { data: completedRaces } = await supabase
     .from("races")
     .select("id, name, round_number")
     .eq("status", "completed")
+    .eq("series", series)
     .order("round_number", { ascending: true });
 
   const races = completedRaces || [];

@@ -1113,7 +1113,7 @@ export default function TeamPage() {
                         </div>
                       </div>
                       <span className="text-[#A0A0A0] text-xs shrink-0 ml-2">
-                        {new Date(txn.created_at + "Z").toLocaleDateString()}
+                        {new Date(txn.created_at).toLocaleDateString()}
                       </span>
                     </div>
                   </div>

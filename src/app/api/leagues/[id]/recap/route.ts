@@ -24,6 +24,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
+  const { data: leagueRow } = await supabase.from("leagues").select("series").eq("id", id).single();
+  const series = (leagueRow?.series as string) || "sx";
+  const isMX = series !== "sx";
+
   const raceIdParam = req.nextUrl.searchParams.get("raceId");
 
   // Get target race
@@ -36,11 +40,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       .maybeSingle();
     race = data;
   } else {
-    // Most recent completed race
+    // Most recent completed race in this league's series
     const { data } = await supabase
       .from("races")
       .select("id, name, round_number, date, location, race_time, status")
       .eq("status", "completed")
+      .eq("series", series)
       .order("round_number", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -51,11 +56,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "No completed race found" }, { status: 404 });
   }
 
-  // Get all completed races (for prev/next navigation)
+  // Get all completed races in this series (for prev/next navigation)
   const { data: allCompleted } = await supabase
     .from("races")
     .select("id, name, round_number")
     .eq("status", "completed")
+    .eq("series", series)
     .order("round_number", { ascending: true });
 
   // Get race results with rider info (include rider id for ownership lookup)
@@ -80,17 +86,39 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   type BonusRow = { bonus_type: string; points: number; riders: RiderInfo | null };
 
   const all = (results || []) as unknown as ResultRow[];
-  const top450 = all.filter((r) => r.riders?.class === "450").slice(0, 10);
-  const top250 = all.filter((r) => r.riders?.class !== "450").slice(0, 10);
-
-  // Categorize bonuses
   const allBonuses = (bonuses || []) as unknown as BonusRow[];
+
+  // For non-SX series, riders.class is the stale SX class — override with the
+  // per-series class so 450/250 buckets and labels are correct (e.g. Deegan
+  // is 450MX, not his old 250W).
+  if (isMX) {
+    const ids = new Set<number>();
+    for (const r of all) if (r.riders?.id) ids.add(r.riders.id);
+    for (const b of allBonuses) if (b.riders?.id) ids.add(b.riders.id);
+    if (ids.size > 0) {
+      const { data: rs } = await supabase
+        .from("rider_series")
+        .select("rider_id, class")
+        .eq("series", series)
+        .in("rider_id", [...ids]);
+      const cmap = new Map((rs || []).map((x) => [x.rider_id, x.class as string]));
+      for (const r of all) if (r.riders && cmap.has(r.riders.id)) r.riders.class = cmap.get(r.riders.id)!;
+      for (const b of allBonuses) if (b.riders && cmap.has(b.riders.id)) b.riders.class = cmap.get(b.riders.id)!;
+    }
+  }
+
+  const is450 = (c?: string | null) => (c || "").includes("450");
+  const top450 = all.filter((r) => is450(r.riders?.class)).slice(0, 10);
+  const top250 = all.filter((r) => !is450(r.riders?.class)).slice(0, 10);
+
+  // Categorize bonuses (holeshot types are e.g. "holeshot_450" for SX and
+  // "holeshot_moto1_450" for MX — match on the class substring).
   const heatWinners450 = allBonuses.filter((b) => b.bonus_type.startsWith("heat") && b.bonus_type.includes("450"));
   const heatWinners250 = allBonuses.filter((b) => b.bonus_type.startsWith("heat") && b.bonus_type.includes("250"));
   const lcq450 = allBonuses.find((b) => b.bonus_type === "lcq_450");
   const lcq250 = allBonuses.find((b) => b.bonus_type === "lcq_250");
-  const holeshots450 = allBonuses.filter((b) => b.bonus_type.startsWith("holeshot_450"));
-  const holeshots250 = allBonuses.filter((b) => b.bonus_type.startsWith("holeshot_250"));
+  const holeshots450 = allBonuses.filter((b) => b.bonus_type.startsWith("holeshot") && b.bonus_type.includes("450"));
+  const holeshots250 = allBonuses.filter((b) => b.bonus_type.startsWith("holeshot") && b.bonus_type.includes("250"));
 
   // Calculate user team scores for this race
   const { data: leagueMembers } = await supabase
@@ -189,12 +217,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   userScores.sort((a, b) => b.total - a.total);
 
-  // Detect race format
+  // Detect race format (SX only — MX is always "regular"; its 4 moto holeshots
+  // must NOT be mistaken for a Triple Crown, and it has no East/West showdown).
   const heatCount = allBonuses.filter((b) => b.bonus_type.startsWith("heat")).length;
   const holeshotCount = allBonuses.filter((b) => b.bonus_type.startsWith("holeshot")).length;
-  const isTripleCrown = holeshotCount >= 4; // 3+ holeshots usually means TC
-  const has250E = all.some((r) => r.riders?.class === "250E");
-  const has250W = all.some((r) => r.riders?.class === "250W");
+  const isTripleCrown = !isMX && holeshotCount >= 4; // 3+ holeshots usually means TC
+  const has250E = !isMX && all.some((r) => r.riders?.class === "250E");
+  const has250W = !isMX && all.some((r) => r.riders?.class === "250W");
   const isShowdown = has250E && has250W;
   let format: "triple_crown" | "showdown" | "regular" = "regular";
   if (isTripleCrown) format = "triple_crown";
