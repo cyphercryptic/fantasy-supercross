@@ -1,6 +1,6 @@
 # Session State — pick up here next time
 
-**Last updated:** 2026-05-30
+**Last updated:** 2026-06-03
 
 ## Status: MX 2026 season underway — Round 1 (Fox Raceway) is TODAY
 
@@ -15,9 +15,19 @@ Draft is complete, rosters saved, lineups locking at gate drop. The app is fully
 - **Live refresh:** `POST /api/cron/auto-import` (session-authed, delegates to the nightly GET) + a **"Refresh results"** button on the league Standings card — pull results live as motos finish. Note the nightly cron only runs once at 06:00 UTC, so use the button (or a future frequent cron) to watch live. Import only acts once `race_time` (gate drop) has passed.
 - **Import verified live (Round 1, 2026-05-30):** 250 Moto 1 scored correctly. Two bugs fixed along the way: event-id city matching (exact substrings → shared-word `cityMatchesRace`, fixes verify + auto-discover) and moto parsing (`classifyRace` now allows "Moto **#**1"). Fox Raceway `event_id=506003` set. Promotocross moto links are named "250 Class Moto #1".
 
+## Round 1 audit + duplicate-rider fix (2026-06-03)
+
+Audited every Round 1 moto score against the official source (results.promotocross.com event 506003, all 4 motos parsed from raw HTML). **All 83 result values + 4 holeshots imported correctly** — positions, summed moto points, avg finish all matched. The only defect was a **duplicate-rider** problem, not a scoring bug:
+
+- The 2026-05-29 full-entry-list seed created **second `riders` rows** for 4 people who already existed from SX (Hampshire, Romano, Noren, Luhovey). The importer's `findRider` matches by **name across the whole `riders` table**, so promotocross's SX-style spelling ("Nicholas Romano", "R.J. Hampshire", "Freddie Noren", "Vinny Luhovey") matched the **original SX rows** — while the MX draft/rosters/lineups pointed at the **new duplicate** rows. Result: a rostered rider's correct points landed on a record the lineup didn't reference.
+- **RJ Hampshire** (started by tsfranklin/KTM Dad) was the only rostered casualty → his 8 pts didn't count.
+- **Fix applied (SQL, 2026-06-03):** merged each MX-dup back into its original/canonical id (Hampshire 150→126, Romano 198→140, Noren 154→16, Luhovey 178→68 — moved `rider_series` mx + roster/lineup/draft_pick, deleted the dup `riders` rows). Kept the **official timing-site spelling** as the canonical name so future imports exact-match with **no aliases** needed. Also added **Vince Friese** (#719) to the MX pool (`rider_series` row on existing id 33; raced R1 450, not rostered) and fixed **Jett Lawrence's** MX number **18→1** (#1 plate). No `race_results` edits were needed.
+- **Corrected Round 1 final: Elbows Out 129, KTM Dad 102** (was 94). Verified in DB.
+- **Watch for recurrence:** any rider with a duplicate `riders` row + name that differs from promotocross is the failure mode. All numbers verified accurate as of R1 (Webb #2, Deegan #38 already correct).
+
 ## Open items
 
-1. **Round 1 (Fox Raceway) is scored & complete.** Final: Elbows Out 129, KTM Dad 94. Imported live via the Refresh button. Round 2 = Hangtown (Jun 6) — watch that it auto-discovers (event name "Hangtown Motocross Classic" vs venue "Prairie City"; `cityMatchesRace` should handle it, but verify race day).
+1. **Round 1 (Fox Raceway) is scored, complete & audited.** Final: **Elbows Out 129, KTM Dad 102**. Round 2 = Hangtown (Jun 6) — watch that it auto-discovers (event name "Hangtown Motocross Classic" vs venue "Prairie City"; `cityMatchesRace` should handle it, but verify race day).
 2. **MX injury status is manual** — the injury cron (`/api/cron/injury-report`) is SX-only. Set `rider_series.status='out'` manually when MX riders get hurt. `riders.status` holds stale SX injuries (24 riders incl. Jett Lawrence) — MX UI reads `rider_series.status` everywhere, so ignore `riders.status` for MX.
 3. **Remaining low-priority SX-isms** (audited 2026-05-30, NOT fixed — non-user-facing): standalone `/lineup` and `/roster` pages still use SX class logic but **nothing links to them**; the **Admin → Riders** class dropdown is 450/250E/250W (only matters if manually adding MX riders there).
 
