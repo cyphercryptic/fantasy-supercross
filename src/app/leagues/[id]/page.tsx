@@ -38,6 +38,21 @@ interface Race {
   name: string;
   round_number: number | null;
   status: string;
+  race_time: string | null;
+}
+
+// A race is "live" from gate drop until LIVE_WINDOW_HOURS later (matches the
+// /api/leagues/[id]/live window). Keep in sync with the live endpoint.
+const LIVE_WINDOW_HOURS = 6;
+function findLiveRace(races: Race[]): Race | null {
+  const now = Date.now();
+  return (
+    races.find((r) => {
+      if (r.status !== "upcoming" || !r.race_time) return false;
+      const start = new Date(r.race_time).getTime();
+      return now >= start && now <= start + LIVE_WINDOW_HOURS * 60 * 60 * 1000;
+    }) ?? null
+  );
 }
 
 interface RiderBreakdown {
@@ -64,6 +79,7 @@ export default function LeagueDashboard() {
   const [league, setLeague] = useState<League | null>(null);
   const [standings, setStandings] = useState<Standing[]>([]);
   const [upcomingRace, setUpcomingRace] = useState<Race | null>(null);
+  const [liveRace, setLiveRace] = useState<Race | null>(null);
   const [seasonOver, setSeasonOver] = useState(false);
   const [copied, setCopied] = useState(false);
   const [draftMessage, setDraftMessage] = useState("");
@@ -111,6 +127,7 @@ export default function LeagueDashboard() {
     fetch(`/api/races?series=${series}`).then((r) => r.json()).then((races: Race[]) => {
       const upcoming = races.find((r) => r.status === "upcoming");
       setUpcomingRace(upcoming ?? null);
+      setLiveRace(findLiveRace(races));
       // Season is over only once there ARE races and every one is completed —
       // used to gate the "Start New Season" button so it doesn't show mid-season.
       setSeasonOver(races.length > 0 && races.every((r) => r.status === "completed"));
@@ -414,6 +431,22 @@ export default function LeagueDashboard() {
       {/* Quick Actions — only show after draft is complete */}
       {league.draft_status === "completed" && (
         <>
+          {/* Live race banner — shows from gate drop until the race wraps up */}
+          {liveRace && (
+            <Link
+              href={`/leagues/${id}/live`}
+              className="block bg-red-600 hover:bg-red-700 text-white rounded-xl p-4 mb-3 text-center transition-colors shadow-sm"
+            >
+              <p className="font-bold text-lg flex items-center justify-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                Track Race Live
+              </p>
+              <p className="text-white/80 text-xs mt-1">
+                {liveRace.round_number && `Round ${liveRace.round_number}: `}{liveRace.name} is underway — watch the matchup score live
+              </p>
+            </Link>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <Link
               href={`/leagues/${id}/team`}
