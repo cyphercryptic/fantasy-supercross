@@ -14,7 +14,8 @@ Draft complete, rosters saved, app fully MX-aware end to end. Everything is live
 - **"Track Race Live" tab** — `/leagues/[id]/live` shows the head-to-head matchup auto-refreshing every 60s during a race (gate drop → +6h, while status `upcoming`), then hands off to Race Recap. Red banner on the league dashboard when a race is live. Matchup math shared via `src/lib/race-scoring.ts` (`computeRaceMatchup`, used by Recap + Live).
 - **Fixed silent bonus failure** — `race_bonuses` id sequence had drifted behind max(id), so holeshot inserts failed with 23505 and Hangtown finished with 0 holeshots. Resynced the sequence (data repaired) and the importer now surfaces `bonusError`. **Watch any seeded table for this drift** (see migrations + `db-sequence-drift` memory).
 - **Rider pool → 167.** Added 20 riders missing from both weekends (scanned all 250/450 qualifying/LCQ/moto sessions). Every rider now has a number + manufacturer; privateers labeled "Privateer <Brand>". Enzo Temmerman now matches on import.
-- **Migrations added:** `2026-06-06_fix_race_bonuses_sequence.sql`, `2026-06-07_mx_missing_riders_weekends_1_2.sql`, `2026-06-07b_privateer_team_labels.sql` (all applied to prod via service-role script; files are the idempotent record).
+- **Per-moto finishes on rider profile.** New `race_results.moto_results` JSONB column (`[{moto,position,points}]`); importer writes it for MX, `RiderStatsModal` shows "M1 P3 · M2 P6" per MX race. Rounds 1 & 2 backfilled (also created 5 missing Hangtown rows for the late-added privateers — Enzo Temmerman had 4 uncounted pts; none rostered, standings unchanged).
+- **Migrations added:** `2026-06-06_fix_race_bonuses_sequence.sql`, `2026-06-07_mx_missing_riders_weekends_1_2.sql`, `2026-06-07b_privateer_team_labels.sql`, `2026-06-07c_race_results_moto_breakdown.sql` (all applied to prod; files are the idempotent record).
 
 ## MX scoring model (changed 2026-05-30)
 
