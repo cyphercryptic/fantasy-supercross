@@ -11,26 +11,27 @@
 BEGIN;
 
 WITH new_riders(name, number, team, base_class, mx_class) AS (VALUES
-  ('Alvin Hillan',     301, 'SLR Honda',                                                      '250', '250MX'),
-  ('Carson Burns',     907, 'Burns Racing KTM',                                               '250', '250MX'),
-  ('Chase Forsberg',   779, 'Forsberg Racing Triumph',                                        '250', '250MX'),
-  ('Enzo Temmerman',    92, 'Monster Energy Kawasaki Team Green',                             '250', '250MX'),
-  ('Logan Edwards',    612, 'Western Ag Yamaha',                                              '250', '250MX'),
-  ('Nate Freehill',    416, 'Roseville Motorsports Racing Kawasaki',                          '250', '250MX'),
-  ('Austin Black',     377, 'Austin Black Racing Yamaha',                                     '450', '450MX'),
-  ('Derik Denzin',     194, 'Grateful Ones MC/Roseville Motorsports / Denzin Racing Yamaha',  '450', '450MX'),
-  ('Eric Rivera',      766, 'Revenant Honda',                                                 '450', '450MX'),
-  ('Italo Vaccaro',    868, 'Vaccaro Racing KTM',                                             '450', '450MX'),
-  ('Jeffrey Gorman',   821, 'Factory Moto Kids Honda',                                        '450', '450MX'),
-  ('Jimmy Hazel',      517, 'Clastic Designs Kawasaki',                                       '450', '450MX'),
-  ('Jonah Schmidt',    481, 'Jonah Schmidt Racing Yamaha',                                    '450', '450MX'),
-  ('Jordan Isola',     571, 'Jordan Isola Racing Honda',                                      '450', '450MX'),
-  ('Kaiser Strode',    714, 'Strode Racing Honda',                                            '450', '450MX'),
-  ('Reece Hamalainen', 855, 'Hamalainen Racing KTM',                                          '450', '450MX'),
-  ('Shane Heywood',    626, 'Thompsons Family of Dealerships Yamaha',                          '450', '450MX'),
-  ('Talon Gorman',     618, 'Factory Moto Kids Honda',                                        '450', '450MX'),
-  ('Tyler Ducray',     671, 'AwakenCo KTM',                                                   '450', '450MX'),
-  ('Wyatt Fields',     212, '2 Roosters Racing Yamaha',                                       '450', '450MX')
+  -- Recognizable teams kept; self-funded privateers labeled "Privateer <Brand>".
+  ('Alvin Hillan',     301, 'SLR Honda',                              '250', '250MX'),
+  ('Carson Burns',     907, 'Privateer KTM',                          '250', '250MX'),
+  ('Chase Forsberg',   779, 'Privateer Triumph',                      '250', '250MX'),
+  ('Enzo Temmerman',    92, 'Monster Energy Kawasaki Team Green',     '250', '250MX'),
+  ('Logan Edwards',    612, 'Western Ag Yamaha',                      '250', '250MX'),
+  ('Nate Freehill',    416, 'Roseville Motorsports Racing Kawasaki',  '250', '250MX'),
+  ('Austin Black',     377, 'Privateer Yamaha',                       '450', '450MX'),
+  ('Derik Denzin',     194, 'Privateer Yamaha',                       '450', '450MX'),
+  ('Eric Rivera',      766, 'Privateer Honda',                        '450', '450MX'),
+  ('Italo Vaccaro',    868, 'Privateer KTM',                          '450', '450MX'),
+  ('Jeffrey Gorman',   821, 'Factory Moto Kids Honda',               '450', '450MX'),
+  ('Jimmy Hazel',      517, 'Privateer Kawasaki',                     '450', '450MX'),
+  ('Jonah Schmidt',    481, 'Privateer Yamaha',                       '450', '450MX'),
+  ('Jordan Isola',     571, 'Privateer Honda',                        '450', '450MX'),
+  ('Kaiser Strode',    714, 'Privateer Honda',                        '450', '450MX'),
+  ('Reece Hamalainen', 855, 'Privateer KTM',                          '450', '450MX'),
+  ('Shane Heywood',    626, 'Thompsons Family of Dealerships Yamaha',  '450', '450MX'),
+  ('Talon Gorman',     618, 'Factory Moto Kids Honda',               '450', '450MX'),
+  ('Tyler Ducray',     671, 'Privateer KTM',                          '450', '450MX'),
+  ('Wyatt Fields',     212, 'Privateer Yamaha',                       '450', '450MX')
 ),
 ins AS (
   INSERT INTO riders (name, number, team, class, status)
