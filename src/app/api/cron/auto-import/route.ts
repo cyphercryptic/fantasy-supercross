@@ -301,7 +301,7 @@ export async function GET(req: NextRequest) {
       return null;
     }
 
-    const results: { raceId: number; raceName: string; status: string; resultsImported: number; bonusCount: number; unmatchedCount?: number; unmatchedNames?: string[]; webhookError?: string }[] = [];
+    const results: { raceId: number; raceName: string; status: string; resultsImported: number; bonusCount: number; unmatchedCount?: number; unmatchedNames?: string[]; bonusError?: string; webhookError?: string }[] = [];
 
     for (const race of pendingRaces) {
       const series = (race.series || "sx") as string;
@@ -504,7 +504,11 @@ export async function GET(req: NextRequest) {
           await supabase.from("race_results").upsert(upsertData, { onConflict: "race_id,rider_id" });
         }
 
-        // Clear old bonuses and insert new
+        // Clear old bonuses and insert new. We intentionally surface any insert
+        // error: a silent failure here (e.g. the race_bonuses id sequence drifting
+        // behind max(id) → duplicate-key 23505) previously wiped bonuses and left
+        // 0 holeshots on a completed race with no warning.
+        let bonusError: string | undefined;
         await supabase.from("race_bonuses").delete().eq("race_id", race.id);
         if (bonuses.length > 0) {
           const bonusData = bonuses.map((b) => ({
@@ -513,7 +517,11 @@ export async function GET(req: NextRequest) {
             bonus_type: b.type,
             points: 1,
           }));
-          await supabase.from("race_bonuses").insert(bonusData);
+          const { error: insErr } = await supabase.from("race_bonuses").insert(bonusData);
+          if (insErr) {
+            bonusError = insErr.message;
+            console.error(`race_bonuses insert failed for race ${race.id}: ${insErr.message}`);
+          }
         }
 
         // Mark race completed. For MX we keep it "upcoming" until the overall
@@ -558,11 +566,12 @@ export async function GET(req: NextRequest) {
           raceName: race.name,
           status: eventComplete ? "imported" : "imported-partial",
           resultsImported,
-          bonusCount: bonuses.length,
+          bonusCount: bonusError ? 0 : bonuses.length,
           unmatchedCount: unmatchedRiders.length,
           ...(unmatchedRiders.length > 0 && {
             unmatchedNames: unmatchedRiders.map((r) => `${r.name} (P${r.position} ${r.raceClass})`),
           }),
+          ...(bonusError && { bonusError }),
           ...(webhookError && { webhookError }),
         });
       } catch (err) {
