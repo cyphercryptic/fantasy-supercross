@@ -355,7 +355,7 @@ export async function GET(req: NextRequest) {
         const mainResults: { type: string; results: string[] }[] = [];
         const overallResults: { type: string; results: string[] }[] = [];
         const individualMains: { type: string; results: string[]; name: string }[] = [];
-        const mxMotos: { cls: string; finishOrder: string[] }[] = [];
+        const mxMotos: { cls: string; moto: number; finishOrder: string[] }[] = [];
         const bonuses: { riderId: number; type: string }[] = [];
 
         for (const eventRace of eventRaces) {
@@ -400,7 +400,7 @@ export async function GET(req: NextRequest) {
             // Each moto is scored individually (position points summed per rider
             // below). No moto-winner bonus — a moto win is already worth its
             // position points. Holeshot still earns +1 per moto.
-            mxMotos.push({ cls: classPrefix, finishOrder });
+            mxMotos.push({ cls: classPrefix, moto: Number(motoNum), finishOrder });
 
             if (holeshotRider) {
               const hsRider = findRider(holeshotRider);
@@ -443,8 +443,10 @@ export async function GET(req: NextRequest) {
           }
         }
 
-        // Save results and track unmatched riders
-        const upsertData: { race_id: number; rider_id: number; position: number; points: number }[] = [];
+        // Save results and track unmatched riders. moto_results (MX only) holds
+        // the per-moto breakdown so the rider profile can show each moto finish.
+        type MotoResult = { moto: number; position: number; points: number };
+        const upsertData: { race_id: number; rider_id: number; position: number; points: number; moto_results?: MotoResult[] | null }[] = [];
         const unmatchedRiders: { name: string; position: number; points: number; raceClass: string }[] = [];
         let resultsImported = 0;
 
@@ -452,17 +454,19 @@ export async function GET(req: NextRequest) {
           // MX: score each moto's positions and SUM per rider (one result row
           // per rider per event). Re-runs recompute from all posted motos, so
           // scoring updates live as moto 1, moto 2, etc. come in. The stored
-          // position is the rider's running average finish across their motos.
-          const agg = new Map<number, { points: number; positions: number[] }>();
+          // position is the rider's running average finish across their motos,
+          // and moto_results keeps each moto's individual finish + points.
+          const agg = new Map<number, { points: number; positions: number[]; motos: MotoResult[] }>();
           for (const moto of mxMotos) {
             for (let i = 0; i < moto.finishOrder.length; i++) {
               const position = i + 1;
               const rider = findRider(moto.finishOrder[i]);
               const pts = getMxMotoPoints(position);
               if (rider) {
-                const a = agg.get(rider.id) || { points: 0, positions: [] };
+                const a = agg.get(rider.id) || { points: 0, positions: [], motos: [] };
                 a.points += pts;
                 a.positions.push(position);
+                a.motos.push({ moto: moto.moto, position, points: pts });
                 agg.set(rider.id, a);
               } else if (pts > 0) {
                 unmatchedRiders.push({ name: moto.finishOrder[i], position, points: pts, raceClass: moto.cls });
@@ -471,7 +475,8 @@ export async function GET(req: NextRequest) {
           }
           for (const [riderId, a] of agg) {
             const avgPos = Math.round(a.positions.reduce((s, p) => s + p, 0) / a.positions.length);
-            upsertData.push({ race_id: race.id, rider_id: riderId, position: avgPos, points: a.points });
+            const motos = [...a.motos].sort((x, y) => x.moto - y.moto);
+            upsertData.push({ race_id: race.id, rider_id: riderId, position: avgPos, points: a.points, moto_results: motos });
             resultsImported++;
           }
         } else {

@@ -18,7 +18,16 @@ export interface ModalRiderStats {
   totalPoints: number;
   totalBonus?: number;
   racesRaced: number;
-  recent: { round: number; raceName: string; position: number; points: number }[];
+  recent: { round: number; raceName: string; position: number; points: number; motos?: { moto: number; position: number; points: number }[] | null }[];
+}
+
+// Color a finishing position the same way across single + per-moto badges.
+function posBadgeClass(position: number): string {
+  return position <= 3
+    ? "bg-[#C8A84E]/20 text-[#C8A84E]"
+    : position <= 10
+    ? "bg-[#1A1A1A]/10 text-[#1A1A1A]"
+    : "bg-[#E8E4DF] text-[#8A8A8A] border border-[#D4D0CB]";
 }
 
 interface NewsItem {
@@ -146,17 +155,23 @@ export default function RiderStatsModal({
                             <span className="text-[#1A1A1A] text-sm font-medium truncate">{r.raceName || `Round ${r.round}`}</span>
                           </div>
                           <div className="flex items-center gap-3 shrink-0">
-                            <span
-                              className={`text-xs w-7 h-7 flex items-center justify-center rounded-full font-bold ${
-                                r.position <= 3
-                                  ? "bg-[#C8A84E]/20 text-[#C8A84E]"
-                                  : r.position <= 10
-                                  ? "bg-[#1A1A1A]/10 text-[#1A1A1A]"
-                                  : "bg-[#E8E4DF] text-[#8A8A8A] border border-[#D4D0CB]"
-                              }`}
-                            >
-                              {r.position}
-                            </span>
+                            {r.motos && r.motos.length > 0 ? (
+                              // MX: show each moto's finish (e.g. M1 P3 · M2 P6)
+                              <div className="flex items-center gap-1.5">
+                                {r.motos.map((m) => (
+                                  <span key={m.moto} className="flex items-center gap-1" title={`Moto ${m.moto}: P${m.position} (${m.points}pts)`}>
+                                    <span className="text-[#A0A0A0] text-[10px] font-semibold">M{m.moto}</span>
+                                    <span className={`text-xs w-7 h-7 flex items-center justify-center rounded-full font-bold ${posBadgeClass(m.position)}`}>
+                                      {m.position}
+                                    </span>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className={`text-xs w-7 h-7 flex items-center justify-center rounded-full font-bold ${posBadgeClass(r.position)}`}>
+                                {r.position}
+                              </span>
+                            )}
                             <span className="text-[#8A8A8A] text-xs w-10 text-right">{r.points}pts</span>
                           </div>
                         </div>

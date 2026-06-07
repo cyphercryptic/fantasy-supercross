@@ -32,10 +32,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     .single();
   const series = (league?.series as string) || "sx";
 
+  type MotoResult = { moto: number; position: number; points: number };
+
   // Fetch in parallel: race metadata (this series only), results, bonuses
   const [racesRes, resultsRes, bonusesRes] = await Promise.all([
     supabase.from("races").select("id, round_number, name").eq("series", series),
-    supabase.from("race_results").select("rider_id, race_id, position, points"),
+    supabase.from("race_results").select("rider_id, race_id, position, points, moto_results"),
     supabase.from("race_bonuses").select("rider_id, race_id, points"),
   ]);
 
@@ -57,7 +59,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     totalPositionPoints: number;
     totalBonus: number;
     positionSum: number;
-    recent: { round: number; raceName: string; position: number; points: number }[];
+    recent: { round: number; raceName: string; position: number; points: number; motos?: MotoResult[] | null }[];
   }>();
 
   function getOrInit(riderId: number) {
@@ -97,11 +99,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     });
     stat.recent = sorted.slice(0, 5).map((r) => {
       const race = raceMap.get(r.race_id);
+      const motos = (r as { moto_results?: MotoResult[] | null }).moto_results;
       return {
         round: race?.round_number || 0,
         raceName: race?.name || "",
         position: r.position,
         points: r.points,
+        motos: Array.isArray(motos) && motos.length > 0 ? motos : null,
       };
     });
   }
@@ -118,7 +122,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     totalPoints: number;
     totalBonus: number;
     racesRaced: number;
-    recent: { round: number; raceName: string; position: number; points: number }[];
+    recent: { round: number; raceName: string; position: number; points: number; motos?: MotoResult[] | null }[];
   }> = {};
 
   for (const [riderId, stat] of statsMap) {
