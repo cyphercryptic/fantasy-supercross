@@ -1,6 +1,6 @@
 # Session State — pick up here next time
 
-**Last updated:** 2026-06-07
+**Last updated:** 2026-06-10
 
 ## Status: MX 2026 season underway — Rounds 1 & 2 scored, Round 3 (Thunder Valley) is Jun 13
 
@@ -10,7 +10,10 @@ Draft complete, rosters saved, app fully MX-aware end to end. Everything is live
 - **Round 1 (Fox Raceway):** Elbows Out 129, KTM Dad 102
 - **Round 2 (Hangtown, race id 21, event 507221):** KTM Dad 118, Elbows Out 108 — both audited 0-mismatch vs the official source.
 
-### New this session (2026-06-07)
+### New this session (2026-06-10)
+- **Rider pool → 169.** Added the Coenen brothers (Red Bull KTM Factory Racing) for Round 3 (Thunder Valley): **Lucas Coenen #104 (450MX)**, **Sacha Coenen #109 (250MX)**. Migration `2026-06-10_mx_coenen_brothers.sql` (applied to prod; file is the idempotent record). Pool now 87×450MX + 82×250MX. Watch the Round 3 import matches both names vs promotocross spelling (the name-match strand risk).
+
+### Previous session (2026-06-07)
 - **"Track Race Live" tab** — `/leagues/[id]/live` shows the head-to-head matchup auto-refreshing every 60s during a race (gate drop → +6h, while status `upcoming`), then hands off to Race Recap. Red banner on the league dashboard when a race is live. Matchup math shared via `src/lib/race-scoring.ts` (`computeRaceMatchup`, used by Recap + Live).
 - **Fixed silent bonus failure** — `race_bonuses` id sequence had drifted behind max(id), so holeshot inserts failed with 23505 and Hangtown finished with 0 holeshots. Resynced the sequence (data repaired) and the importer now surfaces `bonusError`. **Watch any seeded table for this drift** (see migrations + `db-sequence-drift` memory).
 - **Rider pool → 167.** Added 20 riders missing from both weekends (scanned all 250/450 qualifying/LCQ/moto sessions). Every rider now has a number + manufacturer; privateers labeled "Privateer <Brand>". Enzo Temmerman now matches on import.
@@ -96,6 +99,7 @@ All committed/pushed to `main` and live:
 | `2026-05-29c_mx_rider_bikes.sql` | ✅ (bikes/colors) |
 | `2026-05-30_fix_mx_races.sql` | ✅ (seq resync + restore 11 rounds) |
 | `2026-05-30_mx_race_times.sql` | ✅ (gate-drop locks + Hangtown rename) |
+| `2026-06-10_mx_coenen_brothers.sql` | ✅ (Lucas #104 450MX + Sacha #109 250MX, Red Bull KTM) |
 
 ## Key files
 
