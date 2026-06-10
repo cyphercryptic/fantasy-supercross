@@ -149,8 +149,7 @@ export default function AdminRidersPage() {
             className="bg-[#EBE7E2] border border-[#D4D0CB] rounded px-3 py-2 text-[#1A1A1A] text-sm"
           >
             <option value="450">450</option>
-            <option value="250E">250 East</option>
-            <option value="250W">250 West</option>
+            <option value="250">250</option>
           </select>
           <button
             type="submit"
