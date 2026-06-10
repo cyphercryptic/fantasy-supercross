@@ -32,4 +32,12 @@ WHERE NOT EXISTS (
   WHERE rs.series = 'mx' AND lower(rr.name) = lower(nr.name)
 );
 
+-- The prod inserts used explicit ids (245/246, 392/393) to sidestep drift, which
+-- leaves the SERIAL sequences behind max(id). The Admin add-rider endpoint
+-- (POST /api/riders) inserts without an id, so resync or the next add 23505s.
+SELECT setval(pg_get_serial_sequence('riders', 'id'),
+              (SELECT MAX(id) FROM riders));
+SELECT setval(pg_get_serial_sequence('rider_series', 'id'),
+              (SELECT MAX(id) FROM rider_series));
+
 COMMIT;
