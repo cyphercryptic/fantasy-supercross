@@ -1,8 +1,8 @@
 # Session State — pick up here next time
 
-**Last updated:** 2026-06-10
+**Last updated:** 2026-06-15
 
-## Status: MX 2026 season underway — Rounds 1 & 2 scored, Round 3 (Thunder Valley) is Jun 13
+## Status: MX 2026 season underway — Rounds 1–3 scored, Round 4 (High Point) is Jun 20
 
 Draft complete, rosters saved, app fully MX-aware end to end. Everything is live in production (`fantasy-supercross.vercel.app`, auto-deploys from `main`).
 
@@ -10,7 +10,14 @@ Draft complete, rosters saved, app fully MX-aware end to end. Everything is live
 - **Round 1 (Fox Raceway):** Elbows Out 129, KTM Dad 102
 - **Round 2 (Hangtown, race id 21, event 507221):** KTM Dad 118, Elbows Out 108 — both audited 0-mismatch vs the official source.
 
-### New this session (2026-06-10)
+### New this session (2026-06-15)
+- **Rider pool → 170.** Added **Carson Wood #226 (250MX, Monster Energy Yamaha Star Racing)** — flagged by the "Unmatched Riders" webhook after Round 3. He made his 250 pro debut at Thunder Valley (motos 27-10) and scored **3 pts (P10 moto 2)** that didn't count because he wasn't in the DB. Migration `2026-06-14_mx_carson_wood.sql` (applied to prod; idempotent record). **Not rostered by anyone**, so R3 standings are unaffected — but his `race_results` row won't exist until **Round 3 is re-imported** (use the "Refresh results" button or auto-import after this add).
+- **Sequence drift is BACK** despite the 528fea8 resync. The Carson Wood insert first hit `23505 riders_pkey id=245` (Lucas Coenen's explicit id). Fix: the migration now resyncs `riders`/`rider_series` sequences **BEFORE** the insert (the old order put the resync after, so nextval collided before it ran). **Rule for any future explicit-id migration: resync the sequence FIRST.** See [[db-sequence-drift]].
+- **n8n "Unmatched Rider Email" body was `undefined`** — the Send-Email node referenced `{{ $json.message }}` but the webhook nests the payload under `body`, so the field is `{{ $json.body.message }}`. **STILL NEEDS A MANUAL UI FIX** (n8n workflow id `Ooang1qN5BC4ruad`, node "Send an Email", html field): the n8n-MCP write path can't touch this instance (versioned-workflow API rejects the reconstructed body; validation passes but apply 400s). Also a subject typo: "Fanasy SX: UnMatched" → "Fantasy SX: Unmatched".
+- **Removed the dead SX-only roster API route** (`src/app/api/leagues/[id]/roster/route.ts`) — it lingered as an untracked leftover after the 087bccf2/086a321 cleanup. Confirmed unreferenced; add/drop lives in `free-agents` (POST), draft in `draft`, roster reads in `team`. Recoverable from git history if ever needed.
+- **RLS:** app uses the service-role key only (server-side, bypasses RLS), so RLS isn't needed for function — but enabled it on all `public` tables (no policies) as the security baseline so the public anon/PostgREST key can't hit tables directly. Service role still bypasses, so no app change. Verify Advisors → Security is clear.
+
+### Previous session (2026-06-10)
 - **Rider pool → 169.** Added the Coenen brothers (Red Bull KTM Factory Racing) for Round 3 (Thunder Valley): **Lucas Coenen #104 (450MX)**, **Sacha Coenen #109 (250MX)**. Migration `2026-06-10_mx_coenen_brothers.sql` (applied to prod; file is the idempotent record). Pool now 87×450MX + 82×250MX. Watch the Round 3 import matches both names vs promotocross spelling (the name-match strand risk).
 
 ### Previous session (2026-06-07)
@@ -43,7 +50,9 @@ Audited every Round 1 moto score against the official source (results.promotocro
 
 1. **Round 1 (Fox Raceway) is scored, complete & audited.** Final: **Elbows Out 129, KTM Dad 102**. Round 2 = Hangtown (Jun 6) — watch that it auto-discovers (event name "Hangtown Motocross Classic" vs venue "Prairie City"; `cityMatchesRace` should handle it, but verify race day).
 2. **MX injury status is manual** — the injury cron (`/api/cron/injury-report`) is SX-only. Set `rider_series.status='out'` manually when MX riders get hurt. `riders.status` holds stale SX injuries (24 riders incl. Jett Lawrence) — MX UI reads `rider_series.status` everywhere, so ignore `riders.status` for MX.
-3. **Remaining low-priority SX-isms** (audited 2026-05-30, NOT fixed — non-user-facing): standalone `/lineup` and `/roster` pages still use SX class logic but **nothing links to them**; the **Admin → Riders** class dropdown is 450/250E/250W (only matters if manually adding MX riders there).
+3. ~~Remaining low-priority SX-isms~~ **RESOLVED.** The orphaned `/lineup` + `/roster` pages and the roster API route are removed (87bccf2 + this session); Admin → Riders class dropdown is now 450/250.
+4. **PENDING (this session): fix the n8n unmatched-rider email body in the UI** — `{{ $json.message }}` → `{{ $json.body.message }}` (workflow `Ooang1qN5BC4ruad`, node "Send an Email"). Until then the alert emails render "undefined" (the rider data still arrives in the webhook payload, so executions are recoverable via n8n).
+5. **PENDING: re-import Round 3** so Carson Wood's result row is written (3 pts, no standings impact since unrostered).
 
 ### Fixed in the 2026-05-30 MX-awareness audit
 Standings breakdown, weekly recap, season recap all now override class from `rider_series` and scope races to the league's series (recap previously defaulted to the SX finale and mis-bucketed 450MX riders into 250 / mistook 4 moto holeshots for a Triple Crown). Transaction-date "Invalid Date" (`+ "Z"`) fixed on team + free-agents. Renew/"Start New Season" button now gated on `seasonOver` (all races completed), not just draft-complete.
@@ -100,6 +109,7 @@ All committed/pushed to `main` and live:
 | `2026-05-30_fix_mx_races.sql` | ✅ (seq resync + restore 11 rounds) |
 | `2026-05-30_mx_race_times.sql` | ✅ (gate-drop locks + Hangtown rename) |
 | `2026-06-10_mx_coenen_brothers.sql` | ✅ (Lucas #104 450MX + Sacha #109 250MX, Red Bull KTM) |
+| `2026-06-14_mx_carson_wood.sql` | ✅ (Carson Wood #226 250MX, Star Yamaha; resync-seq-FIRST pattern) |
 
 ## Key files
 
