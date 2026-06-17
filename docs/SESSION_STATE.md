@@ -1,6 +1,6 @@
 # Session State — pick up here next time
 
-**Last updated:** 2026-06-15
+**Last updated:** 2026-06-17
 
 ## Status: MX 2026 season underway — Rounds 1–3 scored, Round 4 (High Point) is Jun 20
 
@@ -10,7 +10,11 @@ Draft complete, rosters saved, app fully MX-aware end to end. Everything is live
 - **Round 1 (Fox Raceway):** Elbows Out 129, KTM Dad 102
 - **Round 2 (Hangtown, race id 21, event 507221):** KTM Dad 118, Elbows Out 108 — both audited 0-mismatch vs the official source.
 
-### New this session (2026-06-15)
+### New this session (2026-06-17)
+- **Rider pool → 173.** Added three 250MX riders for **Round 4 (High Point, Jun 20)**, per Racer X (2026-06-17): **Vincent Wey #270** + **Kade Johnson #801** (Monster Energy Kawasaki Team Green), **Luke Fauser #462** (Privateer KTM) — all pro debuts/early starts. Migration `2026-06-17_mx_high_point_debuts.sql` (idempotent record). None rostered yet, so no standings impact; they'll auto-link on the High Point import (name-match).
+- **No SQL editor needed for rider-adds.** Applied via a throwaway service-role `node` script doing idempotent PostgREST inserts WITHOUT explicit ids — sequences were synced (post-Carson-Wood), so they landed clean at ids **248–250**, sequence self-advanced, no drift, no `setval` required. The committed `.sql` stays the record; pasting it later is a safe no-op. New feedback memory [[applying-rider-add-migrations]]. Fallback: if a no-id insert ever 23505s, use the SQL editor so the `setval`-FIRST guard runs.
+
+### Prior session (2026-06-15)
 - **Rider pool → 170.** Added **Carson Wood #226 (250MX, Monster Energy Yamaha Star Racing)** — flagged by the "Unmatched Riders" webhook after Round 3. He made his 250 pro debut at Thunder Valley (motos 27-10) and scored **3 pts (P10 moto 2)** that didn't count because he wasn't in the DB. Migration `2026-06-14_mx_carson_wood.sql` (applied to prod; idempotent record). **Not rostered by anyone**, so R3 standings are unaffected — but his `race_results` row won't exist until **Round 3 is re-imported** (use the "Refresh results" button or auto-import after this add).
 - **Sequence drift is BACK** despite the 528fea8 resync. The Carson Wood insert first hit `23505 riders_pkey id=245` (Lucas Coenen's explicit id). Fix: the migration now resyncs `riders`/`rider_series` sequences **BEFORE** the insert (the old order put the resync after, so nextval collided before it ran). **Rule for any future explicit-id migration: resync the sequence FIRST.** See [[db-sequence-drift]].
 - **n8n "Unmatched Rider Email" body was `undefined`** — the Send-Email node referenced `{{ $json.message }}` but the webhook nests the payload under `body`, so the field is `{{ $json.body.message }}`. **STILL NEEDS A MANUAL UI FIX** (n8n workflow id `Ooang1qN5BC4ruad`, node "Send an Email", html field): the n8n-MCP write path can't touch this instance (versioned-workflow API rejects the reconstructed body; validation passes but apply 400s). Also a subject typo: "Fanasy SX: UnMatched" → "Fantasy SX: Unmatched".
