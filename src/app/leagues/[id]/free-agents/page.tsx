@@ -174,10 +174,10 @@ export default function FreeAgentsPage() {
       <div className="flex items-center justify-between mb-1">
         <h1 className="text-2xl sm:text-3xl font-bold text-[#1A1A1A]">Free Agency</h1>
         <Link
-          href={`/leagues/${id}`}
+          href={`/leagues/${id}/team`}
           className="text-[#8A8A8A] hover:text-[#1A1A1A] text-sm"
         >
-          &larr; Back to League
+          &larr; Back to My Team
         </Link>
       </div>
       <p className="text-[#8A8A8A] text-sm mb-6">

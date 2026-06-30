@@ -34,18 +34,36 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   type MotoResult = { moto: number; position: number; points: number };
 
-  // Fetch in parallel: race metadata (this series only), results, bonuses
-  const [racesRes, resultsRes, bonusesRes] = await Promise.all([
-    supabase.from("races").select("id, round_number, name").eq("series", series),
-    supabase.from("race_results").select("rider_id, race_id, position, points, moto_results"),
-    supabase.from("race_bonuses").select("rider_id, race_id, points"),
+  // Fetch this series' races first, then scope results/bonuses to those race
+  // ids SERVER-SIDE. An unfiltered select() is capped at PostgREST's default
+  // max-rows (1000): once race_results crossed that, the newest rows (the most
+  // recent round) were silently truncated, so fresh results vanished from rider
+  // cards even though they were in the DB and counted in standings. Scoping by
+  // race id keeps the fetch small and correct.
+  const { data: racesData } = await supabase
+    .from("races")
+    .select("id, round_number, name")
+    .eq("series", series);
+  const races = racesData || [];
+  const seriesRaceIds = races.map((r) => r.id);
+
+  const [resultsRes, bonusesRes] = await Promise.all([
+    seriesRaceIds.length
+      ? supabase
+          .from("race_results")
+          .select("rider_id, race_id, position, points, moto_results")
+          .in("race_id", seriesRaceIds)
+      : Promise.resolve({ data: [] as { rider_id: number; race_id: number; position: number; points: number; moto_results: MotoResult[] | null }[] }),
+    seriesRaceIds.length
+      ? supabase
+          .from("race_bonuses")
+          .select("rider_id, race_id, points")
+          .in("race_id", seriesRaceIds)
+      : Promise.resolve({ data: [] as { rider_id: number; race_id: number; points: number }[] }),
   ]);
 
-  const races = racesRes.data || [];
-  // Only count results/bonuses from races in this series.
-  const seriesRaceIds = new Set(races.map((r) => r.id));
-  const allResults = (resultsRes.data || []).filter((r) => seriesRaceIds.has(r.race_id));
-  const allBonuses = (bonusesRes.data || []).filter((b) => seriesRaceIds.has(b.race_id));
+  const allResults = resultsRes.data || [];
+  const allBonuses = bonusesRes.data || [];
 
   // Build race lookup map
   const raceMap = new Map<number, { round_number: number; name: string }>();

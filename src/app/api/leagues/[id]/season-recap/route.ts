@@ -60,13 +60,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     .eq("league_id", id)
     .order("pick_number", { ascending: true });
 
-  // All race results + bonuses (we score every rider, since some awards span all rostered riders)
+  // Race results + bonuses for this series' races only. Scope by race id
+  // SERVER-SIDE: an unfiltered select() is capped at PostgREST's default
+  // max-rows (1000), which would silently drop the newest rounds once the
+  // table grows past it and skew the final standings. (we score every rider,
+  // since some awards span all rostered riders)
+  const seasonRaceIds = races.map((r) => r.id);
   const { data: allResults } = await supabase
     .from("race_results")
-    .select("race_id, rider_id, points, position");
+    .select("race_id, rider_id, points, position")
+    .in("race_id", seasonRaceIds);
   const { data: allBonuses } = await supabase
     .from("race_bonuses")
-    .select("race_id, rider_id, points, bonus_type");
+    .select("race_id, rider_id, points, bonus_type")
+    .in("race_id", seasonRaceIds);
 
   // All riders (for name/team/class lookup)
   const { data: allRiders } = await supabase

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import MotoBike, { parseBikeConfig } from "@/components/MotoBike";
 
@@ -34,19 +34,32 @@ export default function Navbar() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const pathname = usePathname();
 
+  // Re-check auth on every route change, not just on mount. The Navbar lives in
+  // the root layout and never remounts during client-side navigation, so a
+  // mount-only check would keep showing "Login" after logging in (login does a
+  // client-side router.push; router.refresh() only re-renders Server Components,
+  // not this client component's effects).
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
-      .then((d) => {
-        setUser(d.user);
-        if (d.user) {
-          fetch("/api/leagues")
-            .then((r) => r.json())
-            .then((data: MyLeague[]) => setLeagues(data));
-        }
-      });
-  }, []);
+      .then((d) => setUser(d.user ?? null))
+      .catch(() => {});
+  }, [pathname]);
+
+  // Load the user's leagues (for the My Team dropdown) whenever the signed-in
+  // identity changes.
+  useEffect(() => {
+    if (!user) {
+      setLeagues([]);
+      return;
+    }
+    fetch("/api/leagues")
+      .then((r) => r.json())
+      .then((data: MyLeague[]) => setLeagues(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, [user?.id]);
 
   // Close dropdowns on outside click
   useEffect(() => {
