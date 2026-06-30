@@ -1,14 +1,23 @@
 # Session State — pick up here next time
 
-**Last updated:** 2026-06-17
+**Last updated:** 2026-06-30
 
-## Status: MX 2026 season underway — Rounds 1–3 scored, Round 4 (High Point) is Jun 20
+## Status: MX 2026 season underway — Rounds 1–4 scored & audited, Round 5 (RedBud) is Jul 4
 
 Draft complete, rosters saved, app fully MX-aware end to end. Everything is live in production (`fantasy-supercross.vercel.app`, auto-deploys from `main`).
 
-### Current standings (after 2 rounds)
+### Current standings (after 4 rounds) — Elbows Out 461, KTM Dad 453
 - **Round 1 (Fox Raceway):** Elbows Out 129, KTM Dad 102
 - **Round 2 (Hangtown, race id 21, event 507221):** KTM Dad 118, Elbows Out 108 — both audited 0-mismatch vs the official source.
+- **Round 3 (Thunder Valley, race id 26, event 507938):** KTM Dad 126, Elbows Out 108
+- **Round 4 (High Point, race id 4, event 508725):** Elbows Out 116, KTM Dad 107
+- **Season total: Elbows Out 461, KTM Dad 453.** Rounds 1–4 each have full results + all 4 holeshot bonuses (moto1/moto2 × 450/250). R5+ correctly still `upcoming`.
+
+### New this session (2026-06-30) — bug fixes + R3 backfill (all live)
+- **FIXED: R4 results vanished from rider cards (PostgREST 1000-row cap).** `race_results` crossed 1000 rows (1041), and `rider-stats` + `season-recap` fetched it **unfiltered** then filtered in JS — so PostgREST silently truncated the newest rows (R4 High Point, highest ids): only 33/74 R4 rows survived, dropping ~41 riders' R4 from their profile cards. **Standings were never affected** (leaderboard filters server-side). Fix: scope both fetches by `race_id` server-side (`.in("race_id", seriesRaceIds)`). `season-recap` had the same latent bug (would've skewed final standings at season end). New memory [[postgrest-1000-row-cap]]. Commit `bab8436`.
+- **FIXED: navbar showed "Login" while signed in.** Navbar is a client component in the root layout that checked `/api/auth/me` only on mount; login does a client-side `router.push` + `router.refresh()`, but `refresh()` only re-renders Server Components, so the Navbar kept its logged-out state until a hard reload. Fix: re-check auth on `usePathname()` change; load leagues on identity change. Also covers register. Commit `bab8436`.
+- **FIXED: free-agents back button** now goes to `/leagues/[id]/team` ("Back to My Team"), was going to league home. Commit `bab8436`.
+- **DONE: Carson Wood R3 backfill** (resolves old pending #5). His R3 debut (250 M1 P27=0, M2 P10=3 → 3 pts, avg P19) was never written because he joined the pool Jun 15, after the R3 import. Upserted his `race_results` row (race 26) via service-role PostgREST; record in `migrations/2026-06-30_mx_carson_wood_r3_backfill.sql`. Free agent → zero standings impact. Commit `1ab6001`.
 
 ### New this session (2026-06-17)
 - **Rider pool → 173.** Added three 250MX riders for **Round 4 (High Point, Jun 20)**, per Racer X (2026-06-17): **Vincent Wey #270** + **Kade Johnson #801** (Monster Energy Kawasaki Team Green), **Luke Fauser #462** (Privateer KTM) — all pro debuts/early starts. Migration `2026-06-17_mx_high_point_debuts.sql` (idempotent record). None rostered yet, so no standings impact; they'll auto-link on the High Point import (name-match).
@@ -56,7 +65,7 @@ Audited every Round 1 moto score against the official source (results.promotocro
 2. **MX injury status is manual** — the injury cron (`/api/cron/injury-report`) is SX-only. Set `rider_series.status='out'` manually when MX riders get hurt. `riders.status` holds stale SX injuries (24 riders incl. Jett Lawrence) — MX UI reads `rider_series.status` everywhere, so ignore `riders.status` for MX.
 3. ~~Remaining low-priority SX-isms~~ **RESOLVED.** The orphaned `/lineup` + `/roster` pages and the roster API route are removed (87bccf2 + this session); Admin → Riders class dropdown is now 450/250.
 4. **PENDING (this session): fix the n8n unmatched-rider email body in the UI** — `{{ $json.message }}` → `{{ $json.body.message }}` (workflow `Ooang1qN5BC4ruad`, node "Send an Email"). Until then the alert emails render "undefined" (the rider data still arrives in the webhook payload, so executions are recoverable via n8n).
-5. **PENDING: re-import Round 3** so Carson Wood's result row is written (3 pts, no standings impact since unrostered).
+5. ~~**PENDING: re-import Round 3** so Carson Wood's result row is written~~ **RESOLVED 2026-06-30** — backfilled his R3 row directly (`migrations/2026-06-30_mx_carson_wood_r3_backfill.sql`), no full re-import needed.
 
 ### Fixed in the 2026-05-30 MX-awareness audit
 Standings breakdown, weekly recap, season recap all now override class from `rider_series` and scope races to the league's series (recap previously defaulted to the SX finale and mis-bucketed 450MX riders into 250 / mistook 4 moto holeshots for a Triple Crown). Transaction-date "Invalid Date" (`+ "Z"`) fixed on team + free-agents. Renew/"Start New Season" button now gated on `seasonOver` (all races completed), not just draft-complete.
