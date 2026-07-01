@@ -143,6 +143,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       .select("id, name, number, class")
       .in("id", allTxnRiderIds);
     riderMap = new Map((txnRiders || []).map((r) => [r.id, r]));
+
+    // riders.class/number are stale SX values — override from rider_series so
+    // the activity log doesn't show 250E/250W (or old numbers) in an MX league.
+    if (leagueSeries !== "sx") {
+      const { data: txnSeriesRows } = await supabase
+        .from("rider_series")
+        .select("rider_id, class, number")
+        .eq("series", leagueSeries)
+        .in("rider_id", allTxnRiderIds);
+      for (const s of txnSeriesRows || []) {
+        const r = riderMap.get(s.rider_id);
+        if (r) { r.class = s.class; if (s.number != null) r.number = s.number; }
+      }
+    }
   }
 
   const transactions = (rawTxns || []).map((t) => {
