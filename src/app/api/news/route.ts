@@ -12,11 +12,14 @@ export async function GET() {
     .order("published_at", { ascending: false })
     .limit(50);
 
-  // Get latest injury status for each rider (most recent entry per rider_name)
+  // Get latest injury status for each rider (most recent entry per rider_name).
+  // Newest-first + limit keeps the latest row per rider within reach while
+  // staying under PostgREST's silent 1000-row cap as the table grows.
   const { data: injuries } = await supabase
     .from("rider_injuries")
     .select("*, news_items(title, link)")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(500);
 
   // Deduplicate to latest status per rider name
   const latestByRider = new Map<string, Record<string, unknown>>();

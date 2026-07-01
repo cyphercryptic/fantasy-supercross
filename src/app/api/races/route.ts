@@ -37,6 +37,32 @@ export async function GET(req: NextRequest) {
       rider_number: (b.riders as unknown as unknown as Record<string, unknown>)?.number,
     }));
 
+    // riders.class/number/team are stale SX values — override from rider_series
+    // for non-SX races so the schedule's 450/250 result buckets are right.
+    if (race && race.series !== "sx") {
+      const ids = [...new Set([...results.map((r) => r.rider_id), ...bonuses.map((b) => b.rider_id)])];
+      if (ids.length > 0) {
+        const { data: seriesRows } = await supabase
+          .from("rider_series")
+          .select("rider_id, class, number, team")
+          .eq("series", race.series)
+          .in("rider_id", ids);
+        const map = new Map((seriesRows || []).map((s) => [s.rider_id, s]));
+        for (const r of results) {
+          const s = map.get(r.rider_id);
+          if (s) {
+            r.rider_class = s.class;
+            if (s.number != null) r.rider_number = s.number;
+            if (s.team != null) r.rider_team = s.team;
+          }
+        }
+        for (const b of bonuses) {
+          const s = map.get(b.rider_id);
+          if (s && s.number != null) b.rider_number = s.number;
+        }
+      }
+    }
+
     return NextResponse.json({ race, results, bonuses });
   }
 
