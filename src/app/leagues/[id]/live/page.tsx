@@ -13,9 +13,15 @@ interface RiderInfo {
   team: string | null;
   class: string;
 }
+interface MotoResult {
+  moto: number;
+  position: number;
+  points: number;
+}
 interface ResultEntry {
   position: number;
   points: number;
+  motoResults?: MotoResult[] | null;
   rider: RiderInfo | null;
 }
 interface UserScoreRider {
@@ -322,7 +328,20 @@ function LiveResultRow({ entry, ownerColor }: { entry: ResultEntry; ownerColor: 
   const style = ownerColor ? { borderColor: ownerColor, borderWidth: "2px", boxShadow: `0 0 0 1px ${ownerColor}33` } : undefined;
   return (
     <div className="flex items-center gap-3 bg-[#E8E4DF] border border-[#D4D0CB] rounded-lg px-3 py-2" style={style}>
-      <span className="w-7 h-7 rounded-full bg-[#EBE7E2] border border-[#D4D0CB] text-[#6B6B6B] flex items-center justify-center text-xs font-bold shrink-0">P{entry.position}</span>
+      {entry.motoResults && entry.motoResults.length > 0 ? (
+        <span
+          className={`px-2 h-7 rounded-full border flex items-center justify-center text-xs font-bold shrink-0 whitespace-nowrap ${
+            [...entry.motoResults].some((m) => m.position === 1)
+              ? "bg-amber-100 text-amber-700 border-amber-300"
+              : "bg-[#EBE7E2] text-[#6B6B6B] border-[#D4D0CB]"
+          }`}
+          title={[...entry.motoResults].sort((a, b) => a.moto - b.moto).map((m) => `Moto ${m.moto}: P${m.position}`).join("  ·  ")}
+        >
+          {[...entry.motoResults].sort((a, b) => a.moto - b.moto).map((m) => `P${m.position}`).join(" · ")}
+        </span>
+      ) : (
+        <span className="w-7 h-7 rounded-full bg-[#EBE7E2] border border-[#D4D0CB] text-[#6B6B6B] flex items-center justify-center text-xs font-bold shrink-0">P{entry.position}</span>
+      )}
       <TeamLogo team={entry.rider.team} size="sm" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">

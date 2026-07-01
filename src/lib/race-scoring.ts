@@ -24,9 +24,15 @@ export interface RiderInfo {
   class: string;
 }
 
+export interface MotoResult {
+  moto: number;
+  position: number;
+  points: number;
+}
+
 export interface MatchupResult {
-  top450: { position: number; points: number; rider: RiderInfo | null }[];
-  top250: { position: number; points: number; rider: RiderInfo | null }[];
+  top450: { position: number; points: number; motoResults: MotoResult[] | null; rider: RiderInfo | null }[];
+  top250: { position: number; points: number; motoResults: MotoResult[] | null; rider: RiderInfo | null }[];
   bonuses: {
     heat_450: { type: string; rider: RiderInfo | null }[];
     heat_250: { type: string; rider: RiderInfo | null }[];
@@ -61,7 +67,7 @@ export async function computeRaceMatchup(
   // Get race results with rider info (include rider id for ownership lookup)
   const { data: results } = await supabase
     .from("race_results")
-    .select("position, points, riders(id, name, number, team, class)")
+    .select("position, points, moto_results, riders(id, name, number, team, class)")
     .eq("race_id", race.id)
     .order("position");
 
@@ -71,7 +77,7 @@ export async function computeRaceMatchup(
     .select("bonus_type, points, riders(id, name, number, team, class)")
     .eq("race_id", race.id);
 
-  type ResultRow = { position: number; points: number; riders: RiderInfo | null };
+  type ResultRow = { position: number; points: number; moto_results: MotoResult[] | null; riders: RiderInfo | null };
   type BonusRow = { bonus_type: string; points: number; riders: RiderInfo | null };
 
   const all = (results || []) as unknown as ResultRow[];
@@ -97,8 +103,18 @@ export async function computeRaceMatchup(
   }
 
   const is450 = (c?: string | null) => (c || "").includes("450");
-  const top450 = all.filter((r) => is450(r.riders?.class)).slice(0, 10);
-  const top250 = all.filter((r) => !is450(r.riders?.class)).slice(0, 10);
+  // SX `position` is the true finishing position, so the query's position-order is
+  // correct. MX `position` is only the rounded AVERAGE moto finish (see auto-import
+  // route), which produces ties (two riders → "P4") and an order that matches neither
+  // points nor real finish — so rank MX by fantasy points, tie-broken by avg finish
+  // then name. The real per-moto finishes ride along in moto_results for display.
+  const byMxScore = (a: ResultRow, b: ResultRow) =>
+    b.points - a.points ||
+    (a.position ?? 99) - (b.position ?? 99) ||
+    (a.riders?.name || "").localeCompare(b.riders?.name || "");
+  const rank = (arr: ResultRow[]) => (isMX ? [...arr].sort(byMxScore) : arr);
+  const top450 = rank(all.filter((r) => is450(r.riders?.class))).slice(0, 10);
+  const top250 = rank(all.filter((r) => !is450(r.riders?.class))).slice(0, 10);
 
   // Which classes have posted (for the live status line)
   const classStatus = {
@@ -198,11 +214,13 @@ export async function computeRaceMatchup(
     top450: top450.map((r) => ({
       position: r.position,
       points: r.points,
+      motoResults: r.moto_results ?? null,
       rider: r.riders ? { id: r.riders.id, name: r.riders.name, number: r.riders.number, team: r.riders.team, class: r.riders.class } : null,
     })),
     top250: top250.map((r) => ({
       position: r.position,
       points: r.points,
+      motoResults: r.moto_results ?? null,
       rider: r.riders ? { id: r.riders.id, name: r.riders.name, number: r.riders.number, team: r.riders.team, class: r.riders.class } : null,
     })),
     bonuses: {

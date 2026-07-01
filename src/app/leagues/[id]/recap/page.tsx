@@ -15,9 +15,16 @@ interface RiderInfo {
   class: string;
 }
 
+interface MotoResult {
+  moto: number;
+  position: number;
+  points: number;
+}
+
 interface ResultEntry {
   position: number;
   points: number;
+  motoResults: MotoResult[] | null;
   rider: RiderInfo | null;
 }
 
@@ -84,6 +91,25 @@ function buildUserColors(userScores: UserScore[]): Record<number, { color: strin
   return out;
 }
 
+// MX riders run two motos; the real "placement" is each moto's finish (an averaged
+// single P# is misleading — e.g. 11-3 and 4-4 both round to different numbers and tie).
+// Show the actual per-moto finishes; amber if the rider won a moto (P1).
+function MotoFinishesBadge({ motos }: { motos: MotoResult[] }) {
+  const ordered = [...motos].sort((a, b) => a.moto - b.moto);
+  const wonAMoto = ordered.some((m) => m.position === 1);
+  const styles = wonAMoto
+    ? "bg-amber-100 text-amber-700 border-amber-300"
+    : "bg-[#EBE7E2] text-[#6B6B6B] border-[#D4D0CB]";
+  return (
+    <span
+      className={`px-2 h-8 rounded-full border flex items-center justify-center text-xs font-bold shrink-0 whitespace-nowrap ${styles}`}
+      title={ordered.map((m) => `Moto ${m.moto}: P${m.position}`).join("  ·  ")}
+    >
+      {ordered.map((m) => `P${m.position}`).join(" · ")}
+    </span>
+  );
+}
+
 function PositionBadge({ position }: { position: number }) {
   const styles =
     position === 1
@@ -119,7 +145,11 @@ function ResultRow({ entry, owner }: { entry: ResultEntry; owner: { color: strin
       style={ownedStyle}
       title={owner ? `${owner.username}'s rider` : undefined}
     >
-      <PositionBadge position={entry.position} />
+      {entry.motoResults && entry.motoResults.length > 0 ? (
+        <MotoFinishesBadge motos={entry.motoResults} />
+      ) : (
+        <PositionBadge position={entry.position} />
+      )}
       <TeamLogo team={entry.rider.team} size="sm" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap">
