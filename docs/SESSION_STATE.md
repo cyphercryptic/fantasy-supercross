@@ -1,6 +1,6 @@
 # Session State — pick up here next time
 
-**Last updated:** 2026-06-30
+**Last updated:** 2026-07-01
 
 ## Status: MX 2026 season underway — Rounds 1–4 scored & audited, Round 5 (RedBud) is Jul 4
 
@@ -13,7 +13,11 @@ Draft complete, rosters saved, app fully MX-aware end to end. Everything is live
 - **Round 4 (High Point, race id 4, event 508725):** Elbows Out 116, KTM Dad 107
 - **Season total: Elbows Out 461, KTM Dad 453.** Rounds 1–4 each have full results + all 4 holeshot bonuses (moto1/moto2 × 450/250). R5+ correctly still `upcoming`.
 
-### New this session (2026-06-30) — bug fixes + R3 backfill (all live)
+### New this session (2026-07-01) — recap highlight bug (live)
+- **FIXED: race recaps highlighted riders picked up AFTER the race.** Connor's 2026-06-30 pickup of Casey Cochran (rider 143, dropped 121) made the R4 High Point recap show Cochran with Connor's blue highlight + his 8 pts, though he was in nobody's R4 lineup. Cause: `computeRaceMatchup`'s `riderToUser` map (recap + live-tracker highlighting) was built from `league_rosters` (current roster) instead of that race's `weekly_lineups`. Fix in `src/lib/race-scoring.ts`: build the map from the race's locked lineup. Commit `02434fe`, pushed/live.
+- **Scoring verified unaffected** (prod DB): Cochran has zero `weekly_lineups` rows for race 4; dropped rider 121 still in the R4 lineup (drops only delete `upcoming`-race lineup rows); leaderboard/breakdown/season-recap all score strictly from `weekly_lineups`. Standings unchanged — display-only bug. Rule: any historical "who owned this rider" display must read `weekly_lineups`, never `league_rosters` (see memory [[roster-vs-weekly-lineups]]).
+
+### Prior session (2026-06-30) — bug fixes + R3 backfill (all live)
 - **FIXED: R4 results vanished from rider cards (PostgREST 1000-row cap).** `race_results` crossed 1000 rows (1041), and `rider-stats` + `season-recap` fetched it **unfiltered** then filtered in JS — so PostgREST silently truncated the newest rows (R4 High Point, highest ids): only 33/74 R4 rows survived, dropping ~41 riders' R4 from their profile cards. **Standings were never affected** (leaderboard filters server-side). Fix: scope both fetches by `race_id` server-side (`.in("race_id", seriesRaceIds)`). `season-recap` had the same latent bug (would've skewed final standings at season end). New memory [[postgrest-1000-row-cap]]. Commit `bab8436`.
 - **FIXED: navbar showed "Login" while signed in.** Navbar is a client component in the root layout that checked `/api/auth/me` only on mount; login does a client-side `router.push` + `router.refresh()`, but `refresh()` only re-renders Server Components, so the Navbar kept its logged-out state until a hard reload. Fix: re-check auth on `usePathname()` change; load leagues on identity change. Also covers register. Commit `bab8436`.
 - **FIXED: free-agents back button** now goes to `/leagues/[id]/team` ("Back to My Team"), was going to league home. Commit `bab8436`.
