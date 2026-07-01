@@ -140,21 +140,19 @@ export async function computeRaceMatchup(
   type MemberRow = { user_id: number; team_name: string | null; team_logo: string | null; app_users: { username: string } | null };
   const members = (leagueMembers || []) as unknown as MemberRow[];
 
-  // Get every rostered rider and which user owns them (for highlighting)
-  const { data: rosterEntries } = await supabase
-    .from("league_rosters")
-    .select("user_id, rider_id")
-    .eq("league_id", leagueId);
-  const riderToUser: Record<number, number> = {};
-  for (const r of rosterEntries || []) {
-    riderToUser[r.rider_id] = r.user_id;
-  }
-
   const { data: lineups } = await supabase
     .from("weekly_lineups")
     .select("user_id, rider_id")
     .eq("league_id", leagueId)
     .eq("race_id", race.id);
+
+  // Ownership map for highlighting comes from this race's locked lineup, NOT
+  // league_rosters — the current roster drifts as riders are added/dropped and
+  // would retroactively highlight later pickups on old recaps.
+  const riderToUser: Record<number, number> = {};
+  for (const l of lineups || []) {
+    riderToUser[l.rider_id] = l.user_id;
+  }
 
   // Build rider points lookup (results + bonuses)
   const riderPoints: Record<number, { name: string; number: number | null; class: string; resultPoints: number; bonusPoints: number; position: number | null }> = {};

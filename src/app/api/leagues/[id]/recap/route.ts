@@ -82,7 +82,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     top250: matchup.top250,
     bonuses: matchup.bonuses,
     bonusSummary: matchup.bonusSummary,
-    riderToUser: matchup.riderToUser, // map of rider_id → user_id (who has them on roster)
+    riderToUser: matchup.riderToUser, // map of rider_id → user_id (who had them in this race's lineup)
     userScores: matchup.userScores,
   });
 }
